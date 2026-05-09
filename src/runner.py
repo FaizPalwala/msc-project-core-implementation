@@ -9,12 +9,12 @@ Orchestrates:
 
 Usage:
     # Full run (GPU recommended)
-    python run_phase2.py --csv ../data/dataset/sfhq_dataset.csv \
+    python runner.py --csv ../data/dataset/sfhq_dataset.csv \
                          --out ../results \
                          --epochs 30 --forget_step 0
 
     # Quick smoke-test (CPU, small dataset)
-    python run_phase2.py --csv ../data/dataset/sfhq_dataset.csv \
+    python runner.py --csv ../data/dataset/sfhq_dataset.csv \
                          --out ../results --epochs 5 \
                          --forget_step 0 --ga_steps 50 \
                          --srl_epochs 2 --ft_epochs 2 \
