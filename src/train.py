@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 
-from dataset import SFHQDataset, get_train_transform, get_val_transform
+from dataset import VirtualIdentityDataset, get_train_transform, get_val_transform
 from model import build_resnet18, save_model
 from evaluate import evaluate_model
 
@@ -83,10 +83,10 @@ def train(
     print(f"[INFO] Device: {device} | Seed: {seed} | Epochs: {epochs}")
 
     # ── Datasets ──────────────────────────────────────────────────────────────
-    full_train = SFHQDataset(csv_path, split="retain+forget",
-                             transform=get_train_transform())
-    test_ds    = SFHQDataset(csv_path, split="test",
-                             transform=get_val_transform())
+    full_train = VirtualIdentityDataset(csv_path, split="retain+forget",
+                                         transform=get_train_transform())
+    test_ds    = VirtualIdentityDataset(csv_path, split="test",
+                                         transform=get_val_transform())
 
     # Val split from training data
     n_val = max(1, int(len(full_train) * val_fraction))
