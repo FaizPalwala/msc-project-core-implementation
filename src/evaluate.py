@@ -87,7 +87,7 @@ def evaluate_full(
 
     Returns nested dict keyed by split name.
     """
-    from dataset import SFHQDataset, get_val_transform
+    from dataset import VirtualIdentityDataset, get_val_transform
 
     criterion = nn.CrossEntropyLoss()
     results = {}
@@ -97,7 +97,7 @@ def evaluate_full(
         splits_to_eval.append(f"forget_step_{forget_step}")
 
     for split in splits_to_eval:
-        ds = SFHQDataset(csv_path, split=split, transform=get_val_transform())
+        ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform())
         if len(ds) == 0:
             continue
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False,

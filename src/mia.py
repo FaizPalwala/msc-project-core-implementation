@@ -156,16 +156,16 @@ def run_mia_full(
     """
     Convenience wrapper: builds loaders from CSV and runs full MIA.
     """
-    from dataset import SFHQDataset, get_val_transform
+    from dataset import VirtualIdentityDataset, get_val_transform
 
-    retain_ds  = SFHQDataset(csv_path, "retain",  transform=get_val_transform())
-    test_ds    = SFHQDataset(csv_path, "test",    transform=get_val_transform())
+    retain_ds  = VirtualIdentityDataset(csv_path, "retain",  transform=get_val_transform())
+    test_ds    = VirtualIdentityDataset(csv_path, "test",    transform=get_val_transform())
 
     if forget_step is not None:
         forget_split = f"forget_step_{forget_step}"
     else:
         forget_split = "forget"
-    forget_ds = SFHQDataset(csv_path, forget_split, transform=get_val_transform())
+    forget_ds = VirtualIdentityDataset(csv_path, forget_split, transform=get_val_transform())
 
     kw = dict(batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
     retain_loader = DataLoader(retain_ds, **kw)
