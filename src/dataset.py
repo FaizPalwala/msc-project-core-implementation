@@ -64,7 +64,8 @@ class VirtualIdentityDataset(Dataset):
         img_size: int = 128,
     ):
         df_full = pd.read_csv(csv_path)
-
+        # Store dataset parent directory for resolving relative image paths
+        self.data_dir = Path(csv_path).parent.parent.parent   
         # Filter by split
         if split == "retain+forget":
             df = df_full[df_full["split"].isin(["retain", "forget"])].copy()
@@ -93,7 +94,16 @@ class VirtualIdentityDataset(Dataset):
 
     def __getitem__(self, idx: int):
         row = self.df.iloc[idx]
-        img = Image.open(row["image_path"]).convert("RGB")
+        img_path = Path(row["image_path"])
+        
+        if not img_path.is_absolute():
+            img_path = self.data_dir / img_path
+        img_path = img_path.resolve()
+        
+        if not img_path.exists():
+            raise FileNotFoundError(f"Image not found: {img_path} (original: {row['image_path']})")
+        
+        img = Image.open(img_path).convert("RGB")
         if self.transform:
             img = self.transform(img)
         label = int(row["age_group"])
