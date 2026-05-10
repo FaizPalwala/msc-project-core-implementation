@@ -21,7 +21,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from dataset import SFHQDataset, get_val_transform
+from dataset import VirtualIdentityDataset, get_val_transform
 from model import load_model
 from baselines import BASELINE_REGISTRY
 from evaluate import evaluate_full
