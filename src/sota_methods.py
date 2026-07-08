@@ -217,8 +217,6 @@ def masked_small_gradients(
     retain_reg: bool = True,
     retain_reg_lr: float = 1e-4,
     retain_reg_every: int = 2,          # run retain step every N forget steps
-    # ── KL distillation (MSG-KD) ──
-    kl_weight: float = 0.5,             # 0 = vanilla MSG; >0 = MSG-KD
     **kwargs,
 ) -> dict:
     """
@@ -234,26 +232,18 @@ def masked_small_gradients(
 
     Step 2 — Masked ascent + optional retain regularisation:
       Apply gradient ascent only through the masked parameters.
-      Optionally interleave retain descent steps (with optional KL
-      distillation from the reference model) to preserve utility.
+            Optionally interleave retain descent steps to preserve utility.
 
-    When kl_weight > 0, this becomes MSG-KD (the novel variant from Phase 3):
-    a KL-divergence term anchors the unlearned model's retain-set outputs
-    to those of the original model, reducing over-erasure.
+        This is the pure Phase 3 MSG method. The KL-distilled MSG-KD variant
+        lives in `novel_variant.py`.
     """
     t0 = time.time()
     unlearn_m = copy_model(model, device)
-
-    ref_model = copy_model(model, device)
-    ref_model.eval()
-    for p in ref_model.parameters():
-        p.requires_grad_(False)
 
     f_split   = f"forget_step_{forget_step}" if forget_step is not None else "forget"
     f_loader, _ = _loader(csv_path, f_split,  get_val_transform(), batch_size, shuffle=True)
     r_loader, _ = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True)
     criterion    = nn.CrossEntropyLoss()
-    kl_crit      = nn.KLDivLoss(reduction="batchmean", log_target=True)
 
     # ── Step 1: Build gradient mask ───────────────────────────────────────
     print(f"  [MSG] Computing gradient saliency mask (k={topk_fraction*100:.0f}%)...")
@@ -319,13 +309,6 @@ def masked_small_gradients(
             logits_r = unlearn_m(imgs_r)
             loss_r   = criterion(logits_r, lbl_r)
 
-            if kl_weight > 0:
-                with torch.no_grad():
-                    ref_logits = ref_model(imgs_r)
-                log_p   = torch.log_softmax(logits_r,  dim=1)
-                log_q   = torch.log_softmax(ref_logits, dim=1)
-                loss_r += kl_weight * kl_crit(log_p, log_q)
-
             loss_r.backward()
             opt_r.step()
             retain_losses.append(loss_r.item())
@@ -334,17 +317,15 @@ def masked_small_gradients(
     for h in hooks:
         h.remove()
 
-    variant = "MSG-KD" if kl_weight > 0 else "MSG"
     elapsed  = time.time() - t0
     return {
         "model": unlearn_m,
-        "method": variant,
+        "method": "MSG",
         "metrics": {
             "unlearning_time_s": round(elapsed, 2),
             "msg_steps": msg_steps,
             "msg_lr": msg_lr,
             "topk_fraction": topk_fraction,
-            "kl_weight": kl_weight,
             "n_masked_params": int(n_masked),
             "forget_step": forget_step,
             "final_forget_loss": round(float(np.mean(forget_losses[-20:])), 4),
@@ -496,6 +477,5 @@ def convolution_transpose(
 SOTA_REGISTRY = {
     "ng_plus":  neg_grad_plus,
     "msg":      masked_small_gradients,
-    "msg_kd":   lambda *a, **kw: masked_small_gradients(*a, **kw, kl_weight=kw.pop("kl_weight", 0.5)),
     "ct":       convolution_transpose,
 }
