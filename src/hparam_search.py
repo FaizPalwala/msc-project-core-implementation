@@ -61,7 +61,6 @@ GRIDS = {
         "msg_steps":              [200, 400],
         "msg_lr":                 [5e-5, 1e-4, 5e-4],
         "topk_fraction":          [0.1, 0.2, 0.3],
-        "kl_weight":              [0.0, 0.5],
         "retain_reg_every":       [1, 2],
     },
     "ct": {
@@ -72,11 +71,20 @@ GRIDS = {
         "kl_weight":              [0.0, 0.3],
     },
     # Novel variants of SOTA methods
-        "msg_kd": {
+    "msg_kd": {
         "msg_steps":              [200, 400],
         "msg_lr":                 [5e-5, 1e-4],
         "topk_fraction":          [0.1, 0.2, 0.3],
         "kl_weight":              [0.3, 0.5, 0.8],
+    },
+    "adaptiformet": {
+        "max_steps":              [400, 600],
+        "lr_ascent":              [1e-5, 5e-5],
+        "lr_retain":              [5e-5, 1e-4],
+        "topk_fraction":          [0.1, 0.2, 0.3],
+        "kl_weight_init":         [0.0, 0.1],
+        "kl_weight_max":          [0.5, 0.8],
+        "mask_refresh_every":     [50, 100],
     },
     # Baselines — included so we can compare sensitivity
     "ga": {
@@ -105,7 +113,21 @@ RANDOM_RANGES = {
         "msg_steps":              ("int",   100, 600),
         "msg_lr":                 ("log",   1e-5, 1e-3),
         "topk_fraction":          ("float", 0.05, 0.5),
+    },
+    "msg_kd": {
+        "msg_steps":              ("int",   100, 600),
+        "msg_lr":                 ("log",   1e-5, 1e-3),
+        "topk_fraction":          ("float", 0.05, 0.5),
         "kl_weight":              ("float", 0.0, 1.0),
+    },
+    "adaptiformet": {
+        "max_steps":              ("int",   200, 800),
+        "lr_ascent":              ("log",   1e-6, 1e-4),
+        "lr_retain":              ("log",   1e-6, 1e-3),
+        "topk_fraction":          ("float", 0.05, 0.5),
+        "kl_weight_init":         ("float", 0.0, 0.3),
+        "kl_weight_max":          ("float", 0.3, 1.0),
+        "mask_refresh_every":     ("int",   25, 150),
     },
     "ct": {
         "ct_steps":               ("int",   100, 600),
@@ -188,11 +210,12 @@ def run_trial(
 ) -> dict:
     """Run one hyperparameter trial and return evaluation results."""
     from sota_methods import SOTA_REGISTRY
+    from novel_variant import NOVEL_REGISTRY
     try:
         from baselines import BASELINE_REGISTRY
-        METHOD_REGISTRY = {**BASELINE_REGISTRY, **SOTA_REGISTRY}
+        METHOD_REGISTRY = {**BASELINE_REGISTRY, **SOTA_REGISTRY, **NOVEL_REGISTRY}
     except ImportError:
-        METHOD_REGISTRY = SOTA_REGISTRY
+        METHOD_REGISTRY = {**SOTA_REGISTRY, **NOVEL_REGISTRY}
 
     if method_name not in METHOD_REGISTRY:
         raise ValueError(f"Unknown method: {method_name}")
