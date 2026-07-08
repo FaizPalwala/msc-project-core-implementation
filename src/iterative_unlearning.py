@@ -42,6 +42,7 @@ from typing import Dict, List, Optional
 
 import torch
 
+from device_utils import resolve_device
 from evaluate import evaluate_full
 from mia import run_mia_full
 from model import load_model, copy_model
@@ -104,7 +105,7 @@ def _get_registry():
     except ImportError:
         pass
     try:
-        from methods_sota import SOTA_REGISTRY
+        from sota_methods import SOTA_REGISTRY
         reg.update(SOTA_REGISTRY)
     except ImportError:
         pass
@@ -134,8 +135,7 @@ def run_iterative(
     checkpoint_every: int = 5,
     verbose_eval: bool = False,
 ) -> List[dict]:
-    device = (torch.device("cuda" if torch.cuda.is_available() else "cpu")
-              if device_str == "auto" else torch.device(device_str))
+    device = resolve_device(device_str)
 
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)

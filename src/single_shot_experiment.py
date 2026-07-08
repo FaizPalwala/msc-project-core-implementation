@@ -22,6 +22,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from dataset import VirtualIdentityDataset, get_val_transform
+from device_utils import resolve_device
 from model import load_model
 from baselines import BASELINE_REGISTRY
 from evaluate import evaluate_full
@@ -50,10 +51,7 @@ def run_single_shot(
     retrain_epochs: int = 30,
 ):
     torch.manual_seed(seed)
-    device = (
-        torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if device_str == "auto" else torch.device(device_str)
-    )
+    device = resolve_device(device_str)
     print(f"\n[INFO] Device: {device}")
     print(f"[INFO] Forget step: {forget_step}")
     print(f"[INFO] Methods: {methods}")

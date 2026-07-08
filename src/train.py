@@ -22,6 +22,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 
 from dataset import VirtualIdentityDataset, get_train_transform, get_val_transform
+from device_utils import resolve_device
 from model import build_resnet18, save_model
 from evaluate import evaluate_model
 
@@ -43,7 +44,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, scaler=None):
         optimizer.zero_grad()
 
         if scaler is not None:
-            with torch.cuda.amp.autocast():
+            with torch.autocast(device_type=device.type):
                 logits = model(imgs)
                 loss = criterion(logits, labels)
             scaler.scale(loss).backward()
@@ -77,9 +78,10 @@ def train(
     run_name: str = "original_model",
 ):
     set_seed(seed)
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    ) if device_str == "auto" else torch.device(device_str)
+    device = resolve_device(device_str)
+    # device = torch.device(
+    #     "cuda" if torch.cuda.is_available() else "cpu"
+    # ) if device_str == "auto" else torch.device(device_str)
     print(f"[INFO] Device: {device} | Seed: {seed} | Epochs: {epochs}")
 
     # ── Datasets ──────────────────────────────────────────────────────────────
@@ -113,7 +115,7 @@ def train(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr,
                                  weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    scaler = torch.cuda.amp.GradScaler() if device.type == "cuda" else None
+    scaler = torch.amp.GradScaler(device_type=device.type) if device.type in {"cuda"} else None
 
     save_path = Path(save_dir)
     save_path.mkdir(parents=True, exist_ok=True)

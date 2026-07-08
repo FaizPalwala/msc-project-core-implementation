@@ -39,6 +39,7 @@ import numpy as np
 import torch
 
 from dataset import SFHQDataset, get_val_transform
+from device_utils import resolve_device
 from evaluate import evaluate_full
 from mia import run_mia_full
 from model import load_model
@@ -275,8 +276,7 @@ def run_search(
     device_str: str = "auto",
     seed: int = 42,
 ) -> List[dict]:
-    device = (torch.device("cuda" if torch.cuda.is_available() else "cpu")
-              if device_str == "auto" else torch.device(device_str))
+    device = resolve_device(device_str)
     print(f"\n[HPSearch] Method={method_name} | Type={search_type} | Device={device}")
 
     out_path = Path(out_dir)

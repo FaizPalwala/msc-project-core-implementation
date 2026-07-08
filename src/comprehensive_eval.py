@@ -26,6 +26,7 @@ from typing import Dict, List, Optional
 import torch
 
 from dataset import SFHQDataset, get_val_transform
+from device_utils import resolve_device
 from evaluate import evaluate_full
 from mia import run_mia_full
 from model import load_model, copy_model
@@ -63,20 +64,25 @@ def load_best_config(hparam_dir: Optional[str], method: str) -> dict:
 # ──────────────────────────────────────────────────────────────────────────────
 
 DEFAULT_CONFIGS = {
-    # Phase 2 baselines
+    # Baselines
     "no_unlearning":  {},
     "retrain":        {"epochs": 30, "lr": 1e-3},
     "ga":             {"ga_steps": 300, "ga_lr": 1e-4},
     "srl":            {"srl_epochs": 5, "srl_lr": 1e-4},
     "ft":             {"ft_epochs": 5,  "ft_lr": 1e-4},
-    # Phase 3 SOTA
+    # SOTA
     "ng_plus":        {"ng_steps": 400, "ng_lr_ascent": 5e-5,
                        "ng_lr_retain": 1e-4, "kl_weight": 0.5},
     "msg":            {"msg_steps": 300, "msg_lr": 1e-4, "topk_fraction": 0.2},
-    "msg_kd":         {"msg_steps": 300, "msg_lr": 1e-4,
-                       "topk_fraction": 0.2, "kl_weight": 0.5},
     "ct":             {"ct_steps": 300, "ct_lr": 1e-4,
                        "saliency_threshold_pct": 75.0, "dampen_factor": 0.1},
+    # Novel variant 
+    "msg_kd":         {"msg_steps": 300, "msg_lr": 1e-4,
+                       "topk_fraction": 0.2, "kl_weight": 0.5},
+    "adaptiformet":   {"max_steps": 600, "lr_ascent": 5e-5,
+                       "lr_retain": 1e-4, "topk_fraction": 0.2,
+                       "kl_weight_init": 0.1, "kl_weight_max": 0.8,
+                       "mask_refresh_every": 100},  
 }
 
 METHOD_DISPLAY = {
@@ -87,8 +93,9 @@ METHOD_DISPLAY = {
     "ft":            "FT",
     "ng_plus":       "NG+",
     "msg":           "MSG",
-    "msg_kd":        "MSG-KD †",
     "ct":            "CT",
+    "msg_kd":        "MSG-KD †",
+    "adaptiformet":  "AdaptiForget ‡",
 }
 
 PHASE_LABEL = {
@@ -99,8 +106,9 @@ PHASE_LABEL = {
     "ft":            "P2",
     "ng_plus":       "P3",
     "msg":           "P3",
-    "msg_kd":        "P4",
     "ct":            "P3",
+    "msg_kd":        "P4",
+    "adaptiformet":  "P4",
 }
 
 
@@ -121,8 +129,7 @@ def run_comprehensive_eval(
     mia_score_types: List[str] = ("confidence", "loss"),
 ) -> dict:
     torch.manual_seed(seed)
-    device = (torch.device("cuda" if torch.cuda.is_available() else "cpu")
-              if device_str == "auto" else torch.device(device_str))
+    device = resolve_device(device_str)
 
     print(f"\n{'='*65}")
     print("  PHASE 3 — COMPREHENSIVE SINGLE-SHOT EVALUATION")
