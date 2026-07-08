@@ -16,12 +16,10 @@ All methods share the same signature:
         result["metrics"]  : dict of timing and step counts
 """
 
-import copy
 import time
 import random
 from typing import Optional
 
-import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset, Subset
@@ -85,20 +83,22 @@ def retrain_oracle(
 
     # Build retain-only training set
     # If forget_step is given: retain + remaining forget steps (not this one)
+    
     retain_ds = VirtualIdentityDataset(csv_path, split="retain", transform=get_train_transform())
 
     if forget_step is not None:
-        # Include all forget steps EXCEPT the current one
+        # Include all forget steps EXCEPT the current one - revisit
         import pandas as pd
         df = pd.read_csv(csv_path)
         other_forget = df[
             (df["split"] == "forget") & (df["forget_step"] != forget_step)
         ]
         # Build a small extra dataset for already-forgotten identities
-        from dataset import VirtualIdentityDataset
+        from dataset import VirtualIdentityDataset as VID
         # We wrap via indices on the full forget set
-        full_forget_ds = VirtualIdentityDataset(csv_path, split="forget",
-                                               transform=get_train_transform())
+        full_forget_ds = VID(csv_path, 
+                             split="forget",
+                             transform=get_train_transform())
         retain_indices = [
             i for i, row in full_forget_ds.df.iterrows()
             if row["forget_step"] != forget_step
