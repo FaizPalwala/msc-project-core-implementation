@@ -65,7 +65,7 @@ class VirtualIdentityDataset(Dataset):
     ):
         df_full = pd.read_csv(csv_path)
         # Store dataset parent directory for resolving relative image paths
-        self.data_dir = Path(csv_path).parent.parent.parent   
+        self.data_dir = Path(csv_path).parent.parent   
         # Filter by split
         if split == "retain+forget":
             df = df_full[df_full["split"].isin(["retain", "forget"])].copy()
@@ -120,3 +120,7 @@ class VirtualIdentityDataset(Dataset):
             f"VirtualIdentityDataset(split='{self.split}', "
             f"n={len(self)}, classes={dist})"
         )
+
+
+# Backwards-compatible alias used by the existing runners.
+SFHQDataset = VirtualIdentityDataset
