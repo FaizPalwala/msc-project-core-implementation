@@ -1,0 +1,17 @@
+defaults:
+  - workflow: phase2
+  - profile: full
+  - _self_
+
+paths:
+  csv: data/dataset/sfhq_dataset.csv
+  model: results/checkpoints/original_model_best.pt
+  out: results
+
+runtime:
+  device: auto
+  seed: 42
+
+hydra:
+  job:
+    chdir: false

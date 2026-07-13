@@ -1,0 +1,27 @@
+name: phase2
+
+phase2:
+  train:
+    enabled: true
+    epochs: 30
+    lr: 1.0e-3
+    batch_size: 64
+    skip_train: false
+    model_path: null
+
+  single_shot:
+    enabled: true
+    forget_step: 0
+    methods: [no_unlearning, retrain, ga, srl, ft]
+    ga_steps: 300
+    ga_lr: 1.0e-4
+    srl_epochs: 5
+    srl_lr: 1.0e-4
+    ft_epochs: 5
+    ft_lr: 1.0e-4
+    retrain_epochs: 30
+    skip_retrain_oracle: false
+
+  mia:
+    enabled: true
+    score_type: confidence

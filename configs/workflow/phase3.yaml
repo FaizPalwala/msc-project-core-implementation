@@ -1,0 +1,17 @@
+name: phase3
+
+phase3:
+  out_subdir: phase3
+  stages: [A, B, C]
+  forget_step: 0
+  methods: null
+  skip_retrain: false
+  hparam_dir: null
+
+  hp_methods: [ng_plus, msg, msg_kd, ct]
+  search: grid
+  n_random: 30
+
+  ng_steps: null
+  msg_steps: null
+  ct_steps: null

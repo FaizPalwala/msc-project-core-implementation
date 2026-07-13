@@ -1,0 +1,21 @@
+phase2:
+  train:
+    epochs: 5
+  single_shot:
+    ga_steps: 50
+    srl_epochs: 2
+    ft_epochs: 2
+    skip_retrain_oracle: true
+
+phase3:
+  stages: [A]
+  skip_retrain: true
+  ng_steps: 50
+  msg_steps: 50
+  ct_steps: 50
+
+phase45:
+  stages: [4A, 5A, 5B]
+  n_steps: 5
+  smoke_test: true
+  checkpoint_every: 1
