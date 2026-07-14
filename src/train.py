@@ -115,7 +115,7 @@ def train(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr,
                                  weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    scaler = torch.amp.GradScaler(device_type=device.type) if device.type in {"cuda"} else None
+    scaler = torch.amp.GradScaler(device.type) if device.type in {"cuda"} else None
 
     save_path = Path(save_dir)
     save_path.mkdir(parents=True, exist_ok=True)
