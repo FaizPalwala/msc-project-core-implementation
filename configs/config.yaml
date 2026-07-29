@@ -4,7 +4,7 @@ defaults:
   - _self_
 
 paths:
-  csv: data/dataset/sfhq_dataset.csv
+  csv: data/dataset/dataset.csv
   model: results/checkpoints/original_model_best.pt
   out: results
 
