@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+results
+.DS_Store
+
+.continue
+.vscode
+outputs
+
+phase3
+phase45
+context
