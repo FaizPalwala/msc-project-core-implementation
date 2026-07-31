@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader
 
 from baselines import _combined_loss as _closs
 from dataset import VirtualIdentityDataset, get_val_transform
+from device_utils import resolve_num_workers
 from model import copy_model
 
 
@@ -30,7 +31,10 @@ logger = logging.getLogger(__name__)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _loader(csv, split, transform, batch_size, shuffle=False, workers=2):
+def _loader(csv, split, transform, batch_size, shuffle=False,
+            workers: int | None = None):
+    if workers is None:
+        workers = resolve_num_workers()
     ds = VirtualIdentityDataset(csv, split=split, transform=transform)
     return DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
                       num_workers=workers, pin_memory=True), len(ds)

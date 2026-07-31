@@ -27,6 +27,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset, Subset
 
 from dataset import VirtualIdentityDataset, get_train_transform, get_val_transform
+from device_utils import resolve_num_workers
 from model import build_dual_head_resnet18, copy_model
 
 

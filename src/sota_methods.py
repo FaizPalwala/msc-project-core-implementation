@@ -24,6 +24,7 @@ from torch.utils.data import DataLoader
 
 from baselines import _combined_loss as _closs
 from dataset import VirtualIdentityDataset, get_val_transform
+from device_utils import resolve_num_workers
 from model import copy_model
 
 
