@@ -21,8 +21,8 @@ pip install xformers --index-url https://download.pytorch.org/whl/cu124
 # 5. Project dependencies
 pip install pandas numpy scikit-learn matplotlib pyyaml hydra-core
 
-# 6. cuDNN from pip wheel (required by onnxruntime-gpu)
-export LD_LIBRARY_PATH="$CONDA_PREFIX/lib/python3.10/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
+# 6. cuDNN (PyTorch ships its own — no extra install needed for ResNet-18 training)
+
 ```
 
 ## Storage Layout
@@ -172,15 +172,6 @@ train ──────────────┤                        ├�
 - Iterative depends on both — uses best HP configs from search + single-shot as baseline.
 
 ## Common Issues
-
-### cuDNN falls back to CPU
-```
-[WARN] onnxruntime-gpu: CUDA EP falls back to CPU
-```
-**Fix**: Ensure `export LD_LIBRARY_PATH` includes the pip-installed cuDNN:
-```bash
-export LD_LIBRARY_PATH="$CONDA_PREFIX/lib/python3.10/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
-```
 
 ### Out of memory (L40S, 46 GB)
 - 224×224 ResNet-18 with batch_size=64: ~12 GB VRAM

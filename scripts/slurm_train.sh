@@ -10,9 +10,6 @@ module purge
 module load miniforge
 module load cuda/12.6.2
 conda activate data_gen
-export LD_LIBRARY_PATH="$CONDA_PREFIX/lib/python3.10/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
-export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
-export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CSV="${1:-$SCRATCH/unlearning_project/data/dataset/dataset.csv}"
@@ -20,6 +17,9 @@ SAVE_DIR="${2:-$SCRATCH/unlearning_project/results/checkpoints}"
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Training on $CSV → $SAVE_DIR"
+
+# GPU preflight
+bash "$PROJECT_DIR/scripts/gpu_preflight.sh" || exit 1
 
 python src/train.py \
     --csv "$CSV" \
