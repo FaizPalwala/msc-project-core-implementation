@@ -19,6 +19,10 @@ New:
   11. Demographic breakdown heatmap (rows=age groups/gender/popularity)
   12. Within-step boxplots (4 identities per step confidence distribution)
   13. Phase-space trajectory (forget loss vs retain loss, connected by steps)
+  14. Total wall-clock time bar chart (sorted, cost-emphasis)
+
+Ad-hoc subsetting: --methods and --steps CLI flags filter the data
+before plotting, for quick focused comparisons of busy graphs.
 
 All plots at 300 DPI, publication-ready.
 """
@@ -328,6 +332,44 @@ def plot_cumulative_time(df, out_dir: Path):
                   "Cumulative Time vs. Iteration", out_dir / "09_cumulative_time.png")
 
 
+def plot_total_time_bar(df, out_dir: Path):
+    """Total wall-clock per method as a sorted horizontal bar chart.
+
+    Emphasises cost differences between methods — a key deployment
+    feasibility metric.  Uses final cumulative_time_s per method.
+    """
+    methods = sorted(df["method"].unique())
+    totals = []
+    for method in methods:
+        sub = df[df["method"] == method]
+        if "cumulative_time_s" in sub.columns and len(sub):
+            totals.append(sub["cumulative_time_s"].max())
+        else:
+            totals.append(0.0)
+
+    order = np.argsort(totals)  # ascending
+    sorted_methods = [METHOD_STYLES.get(methods[i], {"label": methods[i]})["label"]
+                      for i in order]
+    sorted_totals = [totals[i] for i in order]
+
+    fig, ax = plt.subplots(figsize=(9, max(4, 0.5 * len(methods) + 2)))
+    colors = [_style(methods[i])["color"] for i in order]
+    bars = ax.barh(sorted_methods, sorted_totals, color=colors, alpha=0.85)
+    # Annotate values
+    for bar, val in zip(bars, sorted_totals):
+        ax.text(bar.get_width() + max(sorted_totals) * 0.01, bar.get_y() + bar.get_height() / 2,
+                f"{val/60:.1f} min", va="center", fontsize=9)
+
+    ax.set_xlabel("Total cumulative time (s)")
+    ax.set_title("Total Unlearning Time by Method\n(lower = cheaper to deploy)",
+                 fontweight="bold", pad=10)
+    ax.set_xlim(0, max(sorted_totals) * 1.15)
+    fig.tight_layout()
+    fig.savefig(out_dir / "14_total_time_bar.png", bbox_inches="tight")
+    plt.close(fig)
+    logger.info("  Saved: 14_total_time_bar.png")
+
+
 # ── New plots (10–13) ─────────────────────────────────────────────────────────
 
 
@@ -500,13 +542,39 @@ def run_stability_analysis(
     out_dir: str = "results/iterative/plots",
     per_id_csv: str | None = None,
     demog_csv: str | None = None,
+    methods: list[str] | None = None,
+    steps: list[int] | None = None,
 ) -> None:
+    """Generate stability plots.
+
+    Args:
+        combined_csv:  Path to iterative_combined.csv.
+        out_dir:       Output directory for plots.
+        per_id_csv:    Optional per-identity MIA CSV (single-shot output).
+        demog_csv:     Optional demographic MIA CSV.
+        methods:       Subset of methods to plot (None = all).
+        steps:         Subset of steps to plot (None = all).
+    """
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"\n[StabilityAnalysis] Loading {combined_csv}…")
     df = load_data(combined_csv)
     df = df[df.get("type", "") != "re_emergence"]  # filter re-emergence rows
+
+    # ── Ad-hoc subset filters ───────────────────────────────────────────
+    if methods:
+        missing = [m for m in methods if m not in set(df["method"].unique())]
+        if missing:
+            logger.warning(f"  [WARN] Unknown methods (ignored): {missing}")
+        df = df[df["method"].isin(methods)]
+    if steps:
+        df = df[df["step"].isin(steps)]
+
+    if df.empty:
+        logger.error("  No data after filtering — check --methods/--steps values")
+        return
+
     logger.info(f"  Methods: {sorted(df['method'].unique())}")
     logger.info(f"  Steps:   {sorted(df['step'].unique())}")
     logger.info(f"  Rows:    {len(df)}")
@@ -521,6 +589,7 @@ def run_stability_analysis(
     plot_heatmap(df, out_path)
     plot_radar(df, out_path)
     plot_cumulative_time(df, out_path)
+    plot_total_time_bar(df, out_path)
 
     # New
     plot_per_identity_signatures(per_id_csv, out_path)
@@ -538,9 +607,15 @@ if __name__ == "__main__":
     parser.add_argument("--out",        type=str, default="results/iterative/plots")
     parser.add_argument("--per_id_csv", type=str, default=None)
     parser.add_argument("--demog_csv",  type=str, default=None)
+    parser.add_argument("--methods",    type=str, nargs="*", default=None,
+                        help="Plot only these methods (e.g. ga adaptiformet)")
+    parser.add_argument("--steps",      type=int, nargs="*", default=None,
+                        help="Plot only these steps (e.g. 1 5 10 15)")
     args = parser.parse_args()
     run_stability_analysis(
         args.combined, args.out,
         per_id_csv=args.per_id_csv,
         demog_csv=args.demog_csv,
+        methods=args.methods or None,
+        steps=args.steps or None,
     )
