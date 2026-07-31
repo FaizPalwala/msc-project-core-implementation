@@ -107,6 +107,10 @@ def neg_grad_plus(
     kl_crit   = nn.KLDivLoss(reduction="batchmean", log_target=True)
     opt_f = torch.optim.SGD(unlearn_m.parameters(), lr=ng_lr_ascent, momentum=0.9)
     opt_r = torch.optim.SGD(unlearn_m.parameters(), lr=ng_lr_retain, momentum=0.9)
+    # AMP (mixed precision) — enabled on CUDA for the 400-step loops
+    use_amp = device.type == "cuda"
+    scaler_f = torch.amp.GradScaler(device.type) if use_amp else None
+    scaler_r = torch.amp.GradScaler(device.type) if use_amp else None
 
     f_iter = _cycle(f_loader)
     r_iter = _cycle(r_loader)
@@ -121,10 +125,18 @@ def neg_grad_plus(
         id_f = id_f.to(device)
         age_f = age_f.to(device)
         opt_f.zero_grad()
-        id_logits_f, age_logits_f = unlearn_m(imgs_f)
-        loss_f = _closs(id_logits_f, age_logits_f, id_f, age_f, criterion, age_weight)
-        (-loss_f).backward()
-        opt_f.step()
+        if use_amp:
+            with torch.autocast(device_type="cuda"):
+                id_logits_f, age_logits_f = unlearn_m(imgs_f)
+                loss_f = _closs(id_logits_f, age_logits_f, id_f, age_f, criterion, age_weight)
+            scaler_f.scale(-loss_f).backward()   # ascent via negated scaled loss
+            scaler_f.step(opt_f)
+            scaler_f.update()
+        else:
+            id_logits_f, age_logits_f = unlearn_m(imgs_f)
+            loss_f = _closs(id_logits_f, age_logits_f, id_f, age_f, criterion, age_weight)
+            (-loss_f).backward()
+            opt_f.step()
         forget_losses.append(loss_f.item())
 
         # Descent on retain
@@ -134,21 +146,36 @@ def neg_grad_plus(
             id_r = id_r.to(device)
             age_r = age_r.to(device)
             opt_r.zero_grad()
-            id_logits_r, age_logits_r = unlearn_m(imgs_r)
-            loss_ce = _closs(id_logits_r, age_logits_r, id_r, age_r, criterion, age_weight)
-
-            if kl_weight > 0:
-                with torch.no_grad():
-                    ref_id, ref_age = ref_model(imgs_r)
-                # KL on identity head
-                log_p = torch.log_softmax(id_logits_r, dim=1)
-                log_q = torch.log_softmax(ref_id, dim=1)
-                loss_r = loss_ce + kl_weight * kl_crit(log_p, log_q)
+            if use_amp:
+                with torch.autocast(device_type="cuda"):
+                    id_logits_r, age_logits_r = unlearn_m(imgs_r)
+                    loss_ce = _closs(id_logits_r, age_logits_r, id_r, age_r,
+                                     criterion, age_weight)
+                    if kl_weight > 0:
+                        with torch.no_grad():
+                            ref_id, ref_age = ref_model(imgs_r)
+                        log_p = torch.log_softmax(id_logits_r, dim=1)
+                        log_q = torch.log_softmax(ref_id, dim=1)
+                        loss_r = loss_ce + kl_weight * kl_crit(log_p, log_q)
+                    else:
+                        loss_r = loss_ce
+                scaler_r.scale(loss_r).backward()
+                scaler_r.step(opt_r)
+                scaler_r.update()
             else:
-                loss_r = loss_ce
-
-            loss_r.backward()
-            opt_r.step()
+                id_logits_r, age_logits_r = unlearn_m(imgs_r)
+                loss_ce = _closs(id_logits_r, age_logits_r, id_r, age_r,
+                                 criterion, age_weight)
+                if kl_weight > 0:
+                    with torch.no_grad():
+                        ref_id, ref_age = ref_model(imgs_r)
+                    log_p = torch.log_softmax(id_logits_r, dim=1)
+                    log_q = torch.log_softmax(ref_id, dim=1)
+                    loss_r = loss_ce + kl_weight * kl_crit(log_p, log_q)
+                else:
+                    loss_r = loss_ce
+                loss_r.backward()
+                opt_r.step()
             retain_losses.append(loss_r.item())
 
     return {

@@ -263,6 +263,10 @@ def adaptiformet(
     kl_crit = nn.KLDivLoss(reduction="batchmean", log_target=True)
     opt_f = torch.optim.AdamW(unlearn_m.parameters(), lr=lr_ascent, weight_decay=0.0)
     opt_r = torch.optim.AdamW(unlearn_m.parameters(), lr=lr_retain, weight_decay=1e-4)
+    # AMP (mixed precision) — enabled on CUDA for the up-to-600-step loop
+    use_amp = device.type == "cuda"
+    scaler_f = torch.amp.GradScaler(device.type) if use_amp else None
+    scaler_r = torch.amp.GradScaler(device.type) if use_amp else None
     f_iter = _cycle(f_loader)
     r_iter = _cycle(r_loader)
 
@@ -328,10 +332,18 @@ def adaptiformet(
         id_f = id_f.to(device)
         age_f = age_f.to(device)
         opt_f.zero_grad()
-        id_logits_f, age_logits_f = unlearn_m(imgs_f)
-        loss_f = _closs(id_logits_f, age_logits_f, id_f, age_f, criterion, age_weight)
-        (-loss_f).backward()
-        opt_f.step()
+        if use_amp:
+            with torch.autocast(device_type="cuda"):
+                id_logits_f, age_logits_f = unlearn_m(imgs_f)
+                loss_f = _closs(id_logits_f, age_logits_f, id_f, age_f, criterion, age_weight)
+            scaler_f.scale(-loss_f).backward()
+            scaler_f.step(opt_f)
+            scaler_f.update()
+        else:
+            id_logits_f, age_logits_f = unlearn_m(imgs_f)
+            loss_f = _closs(id_logits_f, age_logits_f, id_f, age_f, criterion, age_weight)
+            (-loss_f).backward()
+            opt_f.step()
         history["forget_loss"].append(loss_f.item())
 
         for _ in range(retain_steps_per):
@@ -340,16 +352,32 @@ def adaptiformet(
             id_r = id_r.to(device)
             age_r = age_r.to(device)
             opt_r.zero_grad()
-            id_logits_r, age_logits_r = unlearn_m(imgs_r)
-            loss_ce = _closs(id_logits_r, age_logits_r, id_r, age_r, criterion, age_weight)
-            with torch.no_grad():
-                ref_id, _ = ref_model(imgs_r)
-            log_p = torch.log_softmax(id_logits_r, dim=1)
-            log_q = torch.log_softmax(ref_id, dim=1)
-            loss_kl = kl_crit(log_p, log_q)
-            total_r = loss_ce + kl_w * loss_kl
-            total_r.backward()
-            opt_r.step()
+            if use_amp:
+                with torch.autocast(device_type="cuda"):
+                    id_logits_r, age_logits_r = unlearn_m(imgs_r)
+                    loss_ce = _closs(id_logits_r, age_logits_r, id_r, age_r,
+                                     criterion, age_weight)
+                    with torch.no_grad():
+                        ref_id, _ = ref_model(imgs_r)
+                    log_p = torch.log_softmax(id_logits_r, dim=1)
+                    log_q = torch.log_softmax(ref_id, dim=1)
+                    loss_kl = kl_crit(log_p, log_q)
+                    total_r = loss_ce + kl_w * loss_kl
+                scaler_r.scale(total_r).backward()
+                scaler_r.step(opt_r)
+                scaler_r.update()
+            else:
+                id_logits_r, age_logits_r = unlearn_m(imgs_r)
+                loss_ce = _closs(id_logits_r, age_logits_r, id_r, age_r,
+                                 criterion, age_weight)
+                with torch.no_grad():
+                    ref_id, _ = ref_model(imgs_r)
+                log_p = torch.log_softmax(id_logits_r, dim=1)
+                log_q = torch.log_softmax(ref_id, dim=1)
+                loss_kl = kl_crit(log_p, log_q)
+                total_r = loss_ce + kl_w * loss_kl
+                total_r.backward()
+                opt_r.step()
             history["retain_loss"].append(total_r.item())
 
         history["kl_weight"].append(kl_w)
