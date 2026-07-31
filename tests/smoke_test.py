@@ -8,7 +8,7 @@ without requiring GPU or real data.
 
 Usage:
     python tests/smoke_test.py          # standalone
-    msc-smoke                           # via pyproject.toml console_script
+    smoke-test                          # via pyproject.toml console_script
 """
 
 from __future__ import annotations
