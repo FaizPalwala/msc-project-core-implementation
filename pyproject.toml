@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "msc-unlearning"
+version = "1.0.0"
+description = "Machine unlearning evaluation framework for identity-level deletion on synthetic facial data"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Faiz Palwala"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "numpy>=1.24,<2",
+    "pandas>=2.0",
+    "scikit-learn>=1.3",
+    "matplotlib>=3.7",
+    "pyyaml>=6.0",
+    "hydra-core>=1.3",
+    "omegaconf>=2.3",
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black>=23.0",
+]
+
+[project.scripts]
+msc-train = "train:main"
+msc-single-shot = "single_shot:main"
+msc-iterative = "iterative:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["."]

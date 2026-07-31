@@ -317,7 +317,9 @@ def train(
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
+
+def main() -> None:
+    """CLI entry point for training."""
     parser = argparse.ArgumentParser(
         description="Train dual-head ResNet-18 on SFHQ-InstantID",
     )
@@ -347,3 +349,7 @@ if __name__ == "__main__":
         device_str=args.device,
         run_name=args.run_name,
     )
+
+
+if __name__ == "__main__":
+    main()

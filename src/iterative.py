@@ -375,7 +375,8 @@ def _print_summary(all_results: dict) -> None:
     print("=" * 80)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """CLI entry point for iterative unlearning protocol."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv",               type=str, required=True)
     parser.add_argument("--model",             type=str, required=True)
@@ -425,3 +426,7 @@ if __name__ == "__main__":
             checkpoint_every=args.checkpoint_every,
             re_emergence_checks=args.re_emergence or None,
         )
+
+
+if __name__ == "__main__":
+    main()

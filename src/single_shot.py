@@ -472,7 +472,8 @@ def _save_csv(results: dict, out_path: Path) -> None:
     print(f"[OK] CSV → {csv_path}")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """CLI entry point for single-shot evaluation."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv",          type=str, required=True)
     parser.add_argument("--model",        type=str, required=True)
@@ -508,3 +509,7 @@ if __name__ == "__main__":
             scale=args.scale,
             skip_retrain=args.skip_retrain,
         )
+
+
+if __name__ == "__main__":
+    main()
