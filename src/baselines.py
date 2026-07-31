@@ -30,6 +30,23 @@ from dataset import VirtualIdentityDataset, get_train_transform, get_val_transfo
 from model import build_dual_head_resnet18, copy_model
 
 
+# ── Shared helper: AMP-aware backward + step ──────────────────────────────────
+
+def _amp_backward_step(
+    loss: torch.Tensor,
+    optimizer: torch.optim.Optimizer,
+    scaler: torch.amp.GradScaler | None,
+) -> None:
+    """Backward + optimizer step, with optional AMP GradScaler."""
+    if scaler is not None:
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+    else:
+        loss.backward()
+        optimizer.step()
+
+
 # ── Shared helper: combined dual-head loss ────────────────────────────────────
 
 
@@ -70,10 +87,14 @@ def _make_loader(
 
 # ── 1. No-Unlearning Control ──────────────────────────────────────────────────
 
-
 def no_unlearning(model: nn.Module, **kwargs) -> dict:
+    """Returns the original model unchanged (zero-copy reference).
+
+    Unlike all other methods, no_unlearning does not modify the model,
+    so we skip the deep copy.  The caller must not mutate the returned model.
+    """
     return {
-        "model": copy_model(model, next(model.parameters()).device),
+        "model": model,  # zero-copy — caller must treat as read-only
         "method": "NoUnlearning",
         "metrics": {"unlearning_time_s": 0.0, "steps": 0},
     }
