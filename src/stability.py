@@ -82,6 +82,25 @@ def _style(method: str) -> dict:
 
 def load_data(combined_csv: str) -> pd.DataFrame:
     df = pd.read_csv(combined_csv)
+
+    # ── Aggregated format (multi-seed μ ± σ) normalisation ──────────────
+    # If columns look like "mia_mean_auc_mean"/"mia_mean_auc_std", rename
+    # the _mean columns to their base metric name and keep _std alongside.
+    # This lets all plotting functions work unchanged on aggregated data.
+    mean_cols = [c for c in df.columns if c.endswith("_mean")
+                 and not c.endswith("_std")]
+    if mean_cols:
+        rename = {}
+        for c in mean_cols:
+            base = c[:-len("_mean")]
+            std_col = f"{base}_std"
+            if std_col in df.columns:
+                rename[c] = base  # keep base + base_std pairs
+        if rename:
+            df = df.rename(columns=rename)
+            logger.info(f"  [Load] Aggregated format detected — normalised "
+                        f"{len(rename)} mean/std column pairs")
+
     if "is_baseline" in df.columns:
         df = df[df["is_baseline"] != True]
     if "step" in df.columns:
@@ -102,18 +121,33 @@ def _plot_vs_step(df, metric, ylabel, title, out_file,
                   target_line=None, target_label=None, ylim=None):
     fig, ax = plt.subplots(figsize=(9, 5))
     methods = sorted(df["method"].unique())
+    std_col = f"{metric}_std"
+    has_std = std_col in df.columns
+
     for method in methods:
         sub = df[df["method"] == method].sort_values("step")
         s = _style(method)
         ax.plot(sub["step"], sub[metric],
                 color=s["color"], ls=s["ls"], marker=s["marker"],
                 label=s["label"], alpha=0.9)
+        # Error band from multi-seed std (μ ± σ)
+        if has_std:
+            lo = sub[metric] - sub[std_col]
+            hi = sub[metric] + sub[std_col]
+            ax.fill_between(sub["step"], lo, hi,
+                            color=s["color"], alpha=0.12, lw=0)
+
+    if has_std:
+        ax.set_title(f"{title}\n(shaded = μ ± σ across seeds)",
+                     fontweight="bold", pad=10)
+    else:
+        ax.set_title(title, fontweight="bold", pad=10)
+
     if target_line is not None:
         ax.axhline(target_line, color=ORACLE_COLOR, ls=":", lw=1.5,
                    label=target_label or f"Target ({target_line})", alpha=0.7)
     ax.set_xlabel("Forget step")
     ax.set_ylabel(ylabel)
-    ax.set_title(title, fontweight="bold", pad=10)
     if ylim:
         ax.set_ylim(*ylim)
     ax.legend(loc="best", fontsize=9, ncol=2)

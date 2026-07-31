@@ -351,9 +351,8 @@ def _print_summary(all_results: dict) -> None:
     logger.info("  ITERATIVE UNLEARNING SUMMARY")
     logger.info(f"{'='*80}")
     logger.info(f"{'Method':<16} {'MIA@5':>8} {'MIA@10':>8} {'MIA@15':>8} "
-          f"{'ΔRetain':>9} {'Drift@End':>10} {'Time(min)':>10}")
+                f"{'ΔRetain':>9} {'Drift@End':>10} {'Time(min)':>10}")
     logger.info("─" * 72)
-
     for method, records in all_results.items():
         data = [r for r in records
                 if not r.get("is_baseline") and "error" not in r
@@ -380,14 +379,92 @@ def _print_summary(all_results: dict) -> None:
     logger.info("=" * 80)
 
 
-def main() -> None:
+def aggregate_iterative_seeds(out_dir: str) -> dict[str, Any]:
+    """Aggregate multi-seed iterative results into μ ± σ.
+
+    Reads every `seed_*/iterative_combined.csv` under out_dir, groups by
+    (method, step, mode), and computes mean ± std for each numeric metric.
+    Writes `iterative_combined_aggregated.csv` at the top level — this is
+    the file the stability plots should consume for error bands.
+
+    Returns dict keyed by (method, step) → aggregated row.
     """
+    import pandas as pd
+
+    out_path = Path(out_dir)
+    seed_dirs = sorted(out_path.glob("seed_*/iterative_combined.csv"))
+    if not seed_dirs:
+        logger.warning(f"  [WARN] No seed_*/iterative_combined.csv found in {out_path}")
+        return {}
+
+    logger.info(f"  [Aggregate] Found {len(seed_dirs)} seed runs, aggregating…")
+    frames = []
+    for path in seed_dirs:
+        df = pd.read_csv(path)
+        frames.append(df)
+    combined = pd.concat(frames, ignore_index=True)
+
+    # Identify numeric metric columns (exclude identity/step/error columns)
+    exclude = {"step", "method", "mode", "is_baseline", "error",
+               "type", "check_step", "forgotten_step"}
+    metric_cols = [c for c in combined.columns
+                   if c not in exclude and pd.api.types.is_numeric_dtype(combined[c])]
+
+    # Group by (method, step, mode) — ignore re-emergence rows in aggregation
+    group_cols = ["method", "step", "mode"]
+    grouped = combined[
+        combined.get("type", "") != "re_emergence"
+    ].groupby(group_cols, dropna=False)
+
+    agg_rows = []
+    for (method, step, mode), group in grouped:
+        row = {"method": method, "step": step, "mode": mode,
+               "n_seeds": len(group)}
+        for col in metric_cols:
+            values = pd.to_numeric(group[col], errors="coerce").dropna()
+            if values.empty:
+                continue
+            row[f"{col}_mean"] = round(float(values.mean()), 4)
+            row[f"{col}_std"] = round(float(values.std()), 4)
+        agg_rows.append(row)
+
+    agg_df = pd.DataFrame(agg_rows)
+    out_csv = out_path / "iterative_combined_aggregated.csv"
+    agg_df.to_csv(out_csv, index=False)
+    logger.info(f"  [OK] Aggregated μ ± σ → {out_csv} "
+                f"({len(agg_df)} rows across {len(seed_dirs)} seeds)")
+
+    # Quick summary table
+    logger.info(f"\n{'='*72}")
+    logger.info("  ITERATIVE MULTI-SEED SUMMARY (μ ± σ)")
+    logger.info(f"{'='*72}")
+    for method in sorted(agg_df["method"].unique()):
+        sub = agg_df[agg_df["method"] == method]
+        if "mia_mean_auc_mean" not in sub.columns or "retain_acc_mean" not in sub.columns:
+            continue
+        final = sub[sub["step"] == sub["step"].max()]
+        if final.empty:
+            continue
+        mia = final["mia_mean_auc_mean"].iloc[0]
+        mia_s = final["mia_mean_auc_std"].iloc[0]
+        ret = final["retain_acc_mean"].iloc[0]
+        ret_s = final["retain_acc_std"].iloc[0]
+        logger.info(
+            f"  {method:<16} MIA={mia:.4f}±{mia_s:.4f}  "
+            f"Retain={ret:.4f}±{ret_s:.4f}  (step {sub['step'].max()})"
+        )
+    logger.info("=" * 72)
+
+    return {"aggregated_csv": str(out_csv), "rows": agg_rows}
+
+
+def main() -> None:
+    """CLI entry point for iterative unlearning protocol."""
     logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-    CLI entry point for iterative unlearning protocol."""
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv",               type=str, required=True)
     parser.add_argument("--model",             type=str, required=True)
@@ -423,6 +500,8 @@ def main() -> None:
                 checkpoint_every=args.checkpoint_every,
                 re_emergence_checks=args.re_emergence or None,
             )
+        # After all seeds complete, aggregate into μ ± σ
+        aggregate_iterative_seeds(args.out)
     else:
         run_all_iterative(
             csv_path=args.csv,
