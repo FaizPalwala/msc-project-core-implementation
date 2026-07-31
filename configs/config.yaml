@@ -1,16 +1,61 @@
 defaults:
-  - workflow: phase2
   - profile: full
   - _self_
 
+# Dataset selection
+dataset: balanced          # balanced | imbalanced
+
+# Paths (repo-relative)
 paths:
   csv: data/dataset/dataset.csv
+  csv_imbalanced: data/dataset/dataset_imbalanced.csv
   model: results/checkpoints/original_model_best.pt
   out: results
 
-runtime:
-  device: auto
-  seed: 42
+# Training
+train:
+  enabled: true
+  epochs: 30
+  lr: 1.0e-3
+  batch_size: 64
+  weight_decay: 1.0e-4
+  age_weight: 0.5         # weight of age-head loss (relative to identity loss)
+
+# Single-shot evaluation
+single_shot:
+  enabled: true
+  methods: [no_unlearning, retrain, ga, srl, ft, ng_plus, msg, msg_kd, ct, adaptiformet]
+  skip_retrain: false
+
+# Hyperparameter search
+hparam_search:
+  enabled: true
+  methods: [ng_plus, msg, msg_kd, ct, adaptiformet]
+  search: grid            # grid | random
+  n_random: 30
+
+# Ablation study
+ablation:
+  enabled: true
+
+# Iterative unlearning
+iterative:
+  enabled: true
+  methods: [no_unlearning, ga, srl, ft, ng_plus, msg, msg_kd, ct, adaptiformet]
+  n_steps: 15             # 15 steps × 4 identities = 60 forget identities
+  mode: cumulative        # cumulative | fresh
+  skip_retrain: true      # retrain oracle too expensive for iterative
+  checkpoint_every: 5
+  re_emergence_checks: [5, 10, 15]   # steps at which to re-test earlier-forgotten IDs
+
+# Stability analysis (runs on iterative output)
+stability:
+  enabled: true
+
+# Canary validation (one-off, optional)
+canary:
+  enabled: false
+  identities: [0, 1, 2, 3]   # forget variants in step 0
 
 hydra:
   job:

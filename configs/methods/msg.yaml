@@ -1,0 +1,9 @@
+# MSG (Masked Small Gradients) — saliency-based gradient masking + ascent.
+msg_steps: 300
+msg_lr: 1.0e-4
+topk_fraction: 0.20
+mask_grad_batches: 20
+batch_size: 32
+retain_reg: true
+retain_reg_lr: 1.0e-4
+retain_reg_every: 2

@@ -1,0 +1,7 @@
+# NG+ (Negative Gradient Plus) — ascent on forget + descent on retain + KL reg.
+ng_steps: 400
+ng_lr_ascent: 5.0e-5
+ng_lr_retain: 1.0e-4
+retain_steps_per_ascent: 1
+batch_size: 32
+kl_weight: 0.5

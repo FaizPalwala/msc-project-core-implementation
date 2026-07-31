@@ -1,0 +1,5 @@
+# Fine-Tune Retain — fine-tune on retain set only (catastrophic forgetting).
+ft_epochs: 5
+ft_lr: 1.0e-4
+batch_size: 64
+weight_decay: 1.0e-4

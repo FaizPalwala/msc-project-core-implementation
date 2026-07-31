@@ -1,0 +1,5 @@
+# Retrain Oracle — gold-standard: retrain from scratch on retain-only data.
+epochs: 30
+lr: 1.0e-3
+weight_decay: 1.0e-4
+batch_size: 64

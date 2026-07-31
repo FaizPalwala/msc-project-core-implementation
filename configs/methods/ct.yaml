@@ -1,0 +1,11 @@
+# CT (Selective Weight Dampening) — one-shot parameter suppression + stabilisation.
+ct_steps: 300
+ct_lr: 1.0e-4
+saliency_threshold_pct: 75.0
+dampen_factor: 0.1
+saliency_batches: 20
+batch_size: 32
+retain_reg: true
+retain_lr: 1.0e-4
+retain_every: 1
+kl_weight: 0.0

@@ -1,0 +1,15 @@
+# AdaptiForget — adaptive variant: scheduled KL, mask refresh, dual early stopping.
+max_steps: 600
+topk_fraction: 0.20
+lr_ascent: 5.0e-5
+lr_retain: 1.0e-4
+retain_steps_per: 2
+batch_size: 32
+kl_weight_init: 0.1
+kl_weight_max: 0.8
+kl_anneal_steps: 200
+mask_refresh_every: 100
+mask_grad_batches: 20
+early_stop_adv: 0.05
+early_stop_patience: 50
+retain_drop_tol: 0.03

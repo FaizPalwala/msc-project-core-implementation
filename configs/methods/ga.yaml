@@ -1,0 +1,6 @@
+# Gradient Ascent — maximise CE loss on forget set.
+ga_steps: 300
+ga_lr: 1.0e-4
+batch_size: 32
+retain_reg: true
+retain_reg_ratio: 0.5

@@ -1,0 +1,4 @@
+# Successive Random Relabelling — relabel forget samples randomly, then fine-tune.
+srl_epochs: 5
+srl_lr: 1.0e-4
+batch_size: 32
