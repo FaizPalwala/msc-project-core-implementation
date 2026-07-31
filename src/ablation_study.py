@@ -30,6 +30,10 @@ from model import load_model
 from novel_variant import adaptiformet
 
 
+
+import logging
+
+logger = logging.getLogger(__name__)
 ABLATIONS = {
     "Full AdaptiForget":  {},
     "w/o adaptive λ":    {"kl_weight_init": 0.5, "kl_weight_max": 0.5},
@@ -60,10 +64,10 @@ def run_ablation(
 
     results: dict[str, dict] = {}
 
-    print(f"\n  Running {len(ABLATIONS)} ablation variants…")
+    logger.info(f"\n  Running {len(ABLATIONS)} ablation variants…")
     for name, overrides in ABLATIONS.items():
         cfg = {**base_cfg, **overrides}
-        print(f"\n  ── {name}")
+        logger.info(f"\n  ── {name}")
         res = adaptiformet(original, csv_path, device, seed=seed, **cfg)
         m = res["model"]
 
@@ -98,22 +102,22 @@ def run_ablation(
         writer.writeheader()
         writer.writerows(rows)
     (out_path / "ablation_results.json").write_text(json.dumps(results, indent=2))
-    print(f"\n  ✓ Ablation results → {csv_out}")
+    logger.info(f"\n  ✓ Ablation results → {csv_out}")
 
     # Print table
-    print(f"\n{'='*80}")
-    print("  ADAPTIFORMET ABLATION STUDY")
-    print(f"{'='*80}")
-    print(f"{'Variant':<26} {'IdAcc':>7} {'MIA-AUC':>9} {'F-Adv':>7} "
+    logger.info(f"\n{'='*80}")
+    logger.info("  ADAPTIFORMET ABLATION STUDY")
+    logger.info(f"{'='*80}")
+    logger.info(f"{'Variant':<26} {'IdAcc':>7} {'MIA-AUC':>9} {'F-Adv':>7} "
           f"{'Leaked':>7} {'Steps':>6}")
-    print("─" * 65)
+    logger.info("─" * 65)
     for name, r in results.items():
         print(
             f"{name:<26} {r['retain_id_acc']:>7.4f} "
             f"{r['mia_mean_auc']:>9.4f} {r['forget_advantage']:>7.4f} "
             f"{r['fraction_leaked']:>7.4f} {r['steps_used']:>6}"
         )
-    print("=" * 80)
+    logger.info("=" * 80)
 
     return results
 

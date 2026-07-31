@@ -29,6 +29,10 @@ from device_utils import resolve_device
 from evaluate import evaluate_model
 from model import build_dual_head_resnet18, save_model, NUM_IDENTITY_CLASSES, NUM_AGE_CLASSES
 
+
+import logging
+
+logger = logging.getLogger(__name__)
 # ── Seed ──────────────────────────────────────────────────────────────────────
 
 
@@ -179,7 +183,7 @@ def train(
     """
     set_seed(seed)
     device = resolve_device(device_str)
-    print(f"[INFO] Device: {device} | Seed: {seed} | Epochs: {epochs}")
+    logger.info(f"[INFO] Device: {device} | Seed: {seed} | Epochs: {epochs}")
 
     # ── Datasets ──────────────────────────────────────────────────────────
     full_train = VirtualIdentityDataset(
@@ -203,7 +207,7 @@ def train(
     tst_loader = DataLoader(test_ds, batch_size=128, shuffle=False,
                             num_workers=4, pin_memory=True)
 
-    print(f"[INFO] Train: {len(trn_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
+    logger.info(f"[INFO] Train: {len(trn_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
 
     # ── Model ─────────────────────────────────────────────────────────────
     model = build_dual_head_resnet18(
@@ -233,8 +237,8 @@ def train(
         f"{'Epoch':>6} {'Loss':>9} {'IdAcc':>8} {'AgeAcc':>8} "
         f"{'ValId':>8} {'ValAge':>8} {'TestId':>9} {'TestAge':>9} {'LR':>10}"
     )
-    print(f"\n{header}")
-    print("-" * 95)
+    logger.info(f"\n{header}")
+    logger.info("-" * 95)
 
     for epoch in range(1, epochs + 1):
         trn_loss, trn_id_acc, trn_age_acc, _ = train_one_epoch(
@@ -258,7 +262,7 @@ def train(
         }
         history.append(row)
 
-        print(
+        logger.info(
             f"{epoch:>6} {trn_loss:>9.4f} {trn_id_acc:>8.4f} {trn_age_acc:>8.4f} "
             f"{val_res['id_acc']:>8.4f} {val_res['age_acc']:>8.4f} "
             f"{tst_res['id_acc']:>9.4f} {tst_res['age_acc']:>9.4f} "
@@ -307,11 +311,11 @@ def train(
         }, f, indent=2)
 
     elapsed = time.time() - t0
-    print(f"\n[OK] Training complete in {elapsed / 60:.1f} min")
-    print(f"     Best val identity acc : {best_val_id_acc:.4f}")
-    print(f"     Final test identity acc: {tst_res['id_acc']:.4f}")
-    print(f"     Final test age acc     : {tst_res['age_acc']:.4f}")
-    print(f"     Saved to: {save_path}")
+    logger.info(f"\n[OK] Training complete in {elapsed / 60:.1f} min")
+    logger.info(f"     Best val identity acc : {best_val_id_acc:.4f}")
+    logger.info(f"     Final test identity acc: {tst_res['id_acc']:.4f}")
+    logger.info(f"     Final test age acc     : {tst_res['age_acc']:.4f}")
+    logger.info(f"     Saved to: {save_path}")
     return model, history
 
 
@@ -320,6 +324,11 @@ def train(
 
 def main() -> None:
     """CLI entry point for training."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     parser = argparse.ArgumentParser(
         description="Train dual-head ResNet-18 on SFHQ-InstantID",
     )

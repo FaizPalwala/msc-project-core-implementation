@@ -36,6 +36,9 @@ from baselines import BASELINE_REGISTRY
 from sota_methods import SOTA_REGISTRY
 from novel_variant import NOVEL_REGISTRY
 
+import logging
+
+logger = logging.getLogger(__name__)
 METHOD_REGISTRY = {**BASELINE_REGISTRY, **SOTA_REGISTRY, **NOVEL_REGISTRY}
 
 METHOD_DISPLAY = {
@@ -88,7 +91,7 @@ def run_single_shot(
         methods = sorted(m for m in METHOD_REGISTRY if m in method_configs)
     if skip_retrain and "retrain" in methods:
         methods = [m for m in methods if m != "retrain"]
-        print("[INFO] Skipping retrain oracle")
+        logger.info("[INFO] Skipping retrain oracle")
 
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -96,21 +99,21 @@ def run_single_shot(
     original_model = load_model(model_path, device=str(device))
     all_results: dict[str, Any] = {}
 
-    print(f"\n{'='*70}")
-    print(f"  SINGLE-SHOT UNLEARNING EVALUATION")
-    print(f"  Device: {device} | Seed: {seed} | Scale: {scale}")
-    print(f"  Methods: {methods}")
-    print(f"{'='*70}")
+    logger.info(f"\n{'='*70}")
+    logger.info(f"  SINGLE-SHOT UNLEARNING EVALUATION")
+    logger.info(f"  Device: {device} | Seed: {seed} | Scale: {scale}")
+    logger.info(f"  Methods: {methods}")
+    logger.info(f"{'='*70}")
 
     for method_name in methods:
         if method_name not in METHOD_REGISTRY:
-            print(f"[WARN] Unknown method '{method_name}', skipping")
+            logger.warning(f"[WARN] Unknown method '{method_name}', skipping")
             continue
 
         display = METHOD_DISPLAY.get(method_name, method_name)
-        print(f"\n{'─'*60}")
-        print(f"  {display}")
-        print(f"{'─'*60}")
+        logger.info(f"\n{'─'*60}")
+        logger.info(f"  {display}")
+        logger.info(f"{'─'*60}")
 
         cfg = method_configs.get(method_name, {})
         t0 = time.time()
@@ -140,7 +143,7 @@ def run_single_shot(
             max_conf = run_max_confidence_attack(
                 unlearned_model, csv_path, device, head="identity",
             )
-            print(f"  Max-confidence AUC: {max_conf['max_confidence_auc']:.4f}")
+            logger.info(f"  Max-confidence AUC: {max_conf['max_confidence_auc']:.4f}")
 
             # ── Demographic MIA ───────────────────────────────────────────
             demog_mia = run_mia_per_demographic(
@@ -176,10 +179,10 @@ def run_single_shot(
                 "forgetting": forgetting_metrics,
                 "total_time_s": round(total_time, 2),
             }
-            print(f"  ✓ Done in {total_time:.1f}s")
+            logger.info(f"  ✓ Done in {total_time:.1f}s")
 
         except Exception as e:
-            print(f"  ✗ FAILED: {e}")
+            logger.info(f"  ✗ FAILED: {e}")
             import traceback
             traceback.print_exc()
             all_results[method_name] = {"method": display, "error": str(e)}
@@ -188,7 +191,7 @@ def run_single_shot(
     results_path = out_path / "single_shot_results.json"
     with open(results_path, "w") as f:
         json.dump(all_results, f, indent=2)
-    print(f"\n[OK] Full results → {results_path}")
+    logger.info(f"\n[OK] Full results → {results_path}")
 
     # ── Print comprehensive table ─────────────────────────────────────────
     _print_table(all_results)
@@ -237,9 +240,9 @@ def run_single_shot_multi_seed(
         seed_dir = out_path / f"seed_{seed}"
         seed_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"\n{'#'*70}")
-        print(f"  SEED {si+1}/{n_seeds}  (seed={seed})")
-        print(f"{'#'*70}")
+        logger.info(f"\n{'#'*70}")
+        logger.info(f"  SEED {si+1}/{n_seeds}  (seed={seed})")
+        logger.info(f"{'#'*70}")
 
         result = run_single_shot(
             csv_path=csv_path,
@@ -288,7 +291,7 @@ def run_single_shot_multi_seed(
     agg_path = out_path / "single_shot_aggregated.json"
     with open(agg_path, "w") as f:
         json.dump(aggregated, f, indent=2)
-    print(f"\n[OK] Aggregated results (μ ± σ over {n_seeds} seeds) → {agg_path}")
+    logger.info(f"\n[OK] Aggregated results (μ ± σ over {n_seeds} seeds) → {agg_path}")
 
     # ── Print aggregated table ────────────────────────────────────────────
     _print_aggregated_table(aggregated, n_seeds)
@@ -316,7 +319,7 @@ def run_single_shot_multi_seed(
             for fn in fieldnames:
                 row.setdefault(fn, "")
         writer.writerows(rows)
-    print(f"[OK] Aggregated CSV → {agg_csv}")
+    logger.info(f"[OK] Aggregated CSV → {agg_csv}")
 
     return {"per_seed": all_seed_results, "aggregated": aggregated}
 
@@ -351,15 +354,15 @@ def _print_aggregated_table(aggregated: dict, n_seeds: int) -> None:
         f"\n{'Method':<16} {'IdAcc-R':>14} {'MIA-AUC(μ±σ)':>18} "
         f"{'MaxAUC':>9} {'Probe-Id':>9} {'Time':>8}"
     )
-    print(f"\n{'='*85}")
-    print(f"  AGGREGATED RESULTS (μ ± σ over {n_seeds} seeds)")
-    print(f"{'='*85}")
-    print(header)
-    print("─" * 85)
+    logger.info(f"\n{'='*85}")
+    logger.info(f"  AGGREGATED RESULTS (μ ± σ over {n_seeds} seeds)")
+    logger.info(f"{'='*85}")
+    logger.info(header)
+    logger.info("─" * 85)
 
     for method, agg in aggregated.items():
         if "error" in agg:
-            print(f"{agg['method']:<16}  ERROR: {agg['error']}")
+            logger.info(f"{agg['method']:<16}  ERROR: {agg['error']}")
             continue
         r_acc = agg.get("retain_id_acc", float("nan"))
         r_std = agg.get("retain_id_acc_std", 0)
@@ -369,13 +372,13 @@ def _print_aggregated_table(aggregated: dict, n_seeds: int) -> None:
         probe = agg.get("probe_identity_acc", float("nan"))
         t = agg.get("total_time_s", 0)
 
-        print(
+        logger.info(
             f"{agg['method']:<16} {r_acc:>8.4f}±{r_std:.4f} "
             f"{mia:>8.4f}±{mia_s:.4f} {max_a:>9.4f} "
             f"{probe:>9.4f} {t:>8.1f}"
         )
 
-    print("=" * 85)
+    logger.info("=" * 85)
 
 
 def _clean_eval(eval_res: dict) -> dict:
@@ -397,15 +400,15 @@ def _print_table(results: dict[str, Any]) -> None:
         f"{'MIA-F:Id':>9} {'F-Adv':>7} {'MaxConfAUC':>11} "
         f"{'Probe-Id':>9} {'Time(s)':>8}"
     )
-    print("\n" + "=" * 90)
-    print("  SINGLE-SHOT UNLEARNING SUMMARY")
-    print("=" * 90)
-    print(header)
-    print("─" * 90)
+    logger.info("\n" + "=" * 90)
+    logger.info("  SINGLE-SHOT UNLEARNING SUMMARY")
+    logger.info("=" * 90)
+    logger.info(header)
+    logger.info("─" * 90)
 
     for method, data in results.items():
         if "error" in data:
-            print(f"{METHOD_DISPLAY.get(method, method):<16}  ERROR: {data['error']}")
+            logger.info(f"{METHOD_DISPLAY.get(method, method):<16}  ERROR: {data['error']}")
             continue
         ev  = data.get("evaluation", {})
         per_id = data.get("per_identity_mia", {})
@@ -421,18 +424,18 @@ def _print_table(results: dict[str, Any]) -> None:
         max_auc = max_c.get("max_confidence_auc", float("nan"))
         probe_id = probes.get("identity", {}).get("accuracy", float("nan"))
 
-        print(
+        logger.info(
             f"{METHOD_DISPLAY.get(method, method):<16} "
             f"{r_id_acc:>10.4f} {t_id_acc:>10.4f} "
             f"{mia_auc:>9.4f} {f_adv:>7.4f} {max_auc:>11.4f} "
             f"{probe_id:>9.4f} {t:>8.1f}"
         )
 
-    print("=" * 90)
-    print("  MIA-F:Id = per-identity mean MIA AUC (identity head)")
-    print("  MaxConfAUC = worst-case single-image attack")
-    print("  Probe-Id = identity probe accuracy (target: near 0%)")
-    print("=" * 90)
+    logger.info("=" * 90)
+    logger.info("  MIA-F:Id = per-identity mean MIA AUC (identity head)")
+    logger.info("  MaxConfAUC = worst-case single-image attack")
+    logger.info("  Probe-Id = identity probe accuracy (target: near 0%)")
+    logger.info("=" * 90)
 
 
 def _save_csv(results: dict, out_path: Path) -> None:
@@ -469,11 +472,17 @@ def _save_csv(results: dict, out_path: Path) -> None:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else [])
         writer.writeheader()
         writer.writerows(rows)
-    print(f"[OK] CSV → {csv_path}")
+    logger.info(f"[OK] CSV → {csv_path}")
 
 
 def main() -> None:
-    """CLI entry point for single-shot evaluation."""
+    """
+    logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+    CLI entry point for single-shot evaluation."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv",          type=str, required=True)
     parser.add_argument("--model",        type=str, required=True)

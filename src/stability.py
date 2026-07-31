@@ -38,6 +38,10 @@ import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
 
+
+import logging
+
+logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
 
 # ── Style ─────────────────────────────────────────────────────────────────────
@@ -112,7 +116,7 @@ def _plot_vs_step(df, metric, ylabel, title, out_file,
     fig.tight_layout()
     fig.savefig(out_file, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Saved: {out_file.name}")
+    logger.info(f"  Saved: {out_file.name}")
 
 
 # ── Core plots (01–09) ────────────────────────────────────────────────────────
@@ -171,7 +175,7 @@ def plot_pareto(df, out_dir: Path):
     fig.tight_layout()
     fig.savefig(out_dir / "06_pareto.png", bbox_inches="tight")
     plt.close(fig)
-    print("  Saved: 06_pareto.png")
+    logger.info("  Saved: 06_pareto.png")
 
 
 def plot_heatmap(df, out_dir: Path):
@@ -196,7 +200,7 @@ def plot_heatmap(df, out_dir: Path):
     fig.tight_layout()
     fig.savefig(out_dir / "07_heatmap.png", bbox_inches="tight")
     plt.close(fig)
-    print("  Saved: 07_heatmap.png")
+    logger.info("  Saved: 07_heatmap.png")
 
 
 def plot_radar(df, out_dir: Path):
@@ -229,7 +233,7 @@ def plot_radar(df, out_dir: Path):
     fig.tight_layout()
     fig.savefig(out_dir / "08_radar.png", bbox_inches="tight")
     plt.close(fig)
-    print("  Saved: 08_radar.png")
+    logger.info("  Saved: 08_radar.png")
 
 
 def plot_cumulative_time(df, out_dir: Path):
@@ -250,7 +254,7 @@ def plot_per_identity_signatures(
     Falls back gracefully if file not found.
     """
     if per_id_csv is None or not Path(per_id_csv).exists():
-        print("  [SKIP] 10_identity_signatures — no per-identity data")
+        logger.info("  [SKIP] 10_identity_signatures — no per-identity data")
         return
 
     df = pd.read_csv(per_id_csv)
@@ -274,7 +278,7 @@ def plot_per_identity_signatures(
     fig.tight_layout()
     fig.savefig(out_dir / "10_identity_signatures.png", bbox_inches="tight")
     plt.close(fig)
-    print("  Saved: 10_identity_signatures.png")
+    logger.info("  Saved: 10_identity_signatures.png")
 
 
 def plot_demographic_heatmap(
@@ -286,7 +290,7 @@ def plot_demographic_heatmap(
     Requires demographic MIA output from single-shot evaluation.
     """
     if demog_csv is None or not Path(demog_csv).exists():
-        print("  [SKIP] 11_demographic_heatmap — no demographic data")
+        logger.info("  [SKIP] 11_demographic_heatmap — no demographic data")
         return
 
     df = pd.read_csv(demog_csv)
@@ -308,7 +312,7 @@ def plot_demographic_heatmap(
     fig.tight_layout()
     fig.savefig(out_dir / "11_demographic_heatmap.png", bbox_inches="tight")
     plt.close(fig)
-    print("  Saved: 11_demographic_heatmap.png")
+    logger.info("  Saved: 11_demographic_heatmap.png")
 
 
 def plot_phase_space(
@@ -320,7 +324,7 @@ def plot_phase_space(
     Plots forget loss progression across steps connected by arrows.
     """
     if "mia_mean_auc" not in df.columns or "retain_acc" not in df.columns:
-        print("  [SKIP] 12_phase_space — missing required columns")
+        logger.info("  [SKIP] 12_phase_space — missing required columns")
         return
 
     fig, ax = plt.subplots(figsize=(9, 7))
@@ -352,13 +356,13 @@ def plot_phase_space(
     fig.tight_layout()
     fig.savefig(out_dir / "12_phase_space.png", bbox_inches="tight")
     plt.close(fig)
-    print("  Saved: 12_phase_space.png")
+    logger.info("  Saved: 12_phase_space.png")
 
 
 def plot_fraction_leaked(df: pd.DataFrame, out_dir: Path) -> None:
     """Fraction of leaked identities (AUC > 0.55) over steps."""
     if "fraction_leaked" not in df.columns:
-        print("  [SKIP] 13_fraction_leaked — column not found")
+        logger.info("  [SKIP] 13_fraction_leaked — column not found")
         return
     _plot_vs_step(df, "fraction_leaked", "Fraction Identities Leaked (AUC > 0.55)",
                   "Identity Leakage Rate vs. Iteration",
@@ -389,16 +393,16 @@ def compute_summary_stats(df: pd.DataFrame, out_dir: Path) -> None:
     summary_df = pd.DataFrame(rows)
     path = out_dir / "stability_summary.csv"
     summary_df.to_csv(path, index=False)
-    print(f"\n  Summary stats → {path}")
+    logger.info(f"\n  Summary stats → {path}")
 
     # Print
     cols_to_show = [c for c in ["method", "retain_acc_mean", "forget_advantage_mean",
                                  "mia_mean_auc_final"] if c in summary_df.columns]
-    print(f"\n{'='*70}")
-    print("  STABILITY SUMMARY")
-    print(f"{'='*70}")
-    print(summary_df[cols_to_show].to_string(index=False))
-    print("=" * 70)
+    logger.info(f"\n{'='*70}")
+    logger.info("  STABILITY SUMMARY")
+    logger.info(f"{'='*70}")
+    logger.info(summary_df[cols_to_show].to_string(index=False))
+    logger.info("=" * 70)
 
 
 # ── Master runner ─────────────────────────────────────────────────────────────
@@ -413,12 +417,12 @@ def run_stability_analysis(
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n[StabilityAnalysis] Loading {combined_csv}…")
+    logger.info(f"\n[StabilityAnalysis] Loading {combined_csv}…")
     df = load_data(combined_csv)
     df = df[df.get("type", "") != "re_emergence"]  # filter re-emergence rows
-    print(f"  Methods: {sorted(df['method'].unique())}")
-    print(f"  Steps:   {sorted(df['step'].unique())}")
-    print(f"  Rows:    {len(df)}")
+    logger.info(f"  Methods: {sorted(df['method'].unique())}")
+    logger.info(f"  Steps:   {sorted(df['step'].unique())}")
+    logger.info(f"  Rows:    {len(df)}")
 
     # Core
     plot_retain_acc(df, out_path)
@@ -438,7 +442,7 @@ def run_stability_analysis(
     plot_fraction_leaked(df, out_path)
 
     compute_summary_stats(df, out_path)
-    print(f"\n[OK] All plots → {out_path}/")
+    logger.info(f"\n[OK] All plots → {out_path}/")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,10 @@ from dataset import VirtualIdentityDataset, get_val_transform
 from model import copy_model
 
 
+
+import logging
+
+logger = logging.getLogger(__name__)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -190,7 +194,7 @@ def masked_small_gradients(
     criterion = nn.CrossEntropyLoss()
 
     # Build mask
-    print(f"  [MSG] Computing saliency mask (k={topk_fraction*100:.0f}%)…")
+    logger.info(f"  [MSG] Computing saliency mask (k={topk_fraction*100:.0f}%)…")
     unlearn_m.eval()
     G_f = _grad_vector(unlearn_m, f_loader, criterion, device, mask_grad_batches)
     G_r = _grad_vector(unlearn_m, r_loader, criterion, device, mask_grad_batches)
@@ -211,7 +215,7 @@ def masked_small_gradients(
 
     n_masked = sum(m.sum().item() for m in param_mask.values())
     n_total = sum(p.numel() for p in unlearn_m.parameters())
-    print(f"  [MSG] Mask: {n_masked:,.0f}/{n_total:,.0f} params ({100*n_masked/n_total:.1f}%)")
+    logger.info(f"  [MSG] Mask: {n_masked:,.0f}/{n_total:,.0f} params ({100*n_masked/n_total:.1f}%)")
 
     optimizer = torch.optim.Adam(unlearn_m.parameters(), lr=msg_lr)
     opt_r = torch.optim.Adam(unlearn_m.parameters(), lr=retain_reg_lr) if retain_reg else None
@@ -298,7 +302,7 @@ def convolution_transpose(
     criterion = nn.CrossEntropyLoss()
     kl_crit = nn.KLDivLoss(reduction="batchmean", log_target=True)
 
-    print(f"  [CT] Computing saliency (p{saliency_threshold_pct:.0f} threshold)…")
+    logger.info(f"  [CT] Computing saliency (p{saliency_threshold_pct:.0f} threshold)…")
     unlearn_m.eval()
     G_f = _grad_vector(unlearn_m, f_loader, criterion, device, saliency_batches)
     G_r = _grad_vector(unlearn_m, r_loader, criterion, device, saliency_batches)
@@ -316,7 +320,7 @@ def convolution_transpose(
                 n_dampened += int(mask.sum().item())
 
     n_total = sum(p.numel() for p in unlearn_m.parameters())
-    print(f"  [CT] Dampened {n_dampened:,.0f}/{n_total:,.0f} params "
+    logger.info(f"  [CT] Dampened {n_dampened:,.0f}/{n_total:,.0f} params "
           f"({100*n_dampened/n_total:.1f}%) by {dampen_factor}")
 
     optimizer = torch.optim.Adam(unlearn_m.parameters(), lr=ct_lr)

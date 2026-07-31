@@ -26,6 +26,10 @@ from torch.utils.data import DataLoader
 from dataset import VirtualIdentityDataset, get_val_transform
 
 
+
+import logging
+
+logger = logging.getLogger(__name__)
 # ── Score extraction ──────────────────────────────────────────────────────────
 
 
@@ -403,25 +407,25 @@ def run_mia_per_demographic(
 
 def _print_mia_result(result: dict[str, Any]) -> None:
     """Pretty-print a single MIA result."""
-    print(f"\n[MIA — {result.get('head', '?')} head / "
+    logger.info(f"\n[MIA — {result.get('head', '?')} head / "
           f"{result.get('score_type', '?')}]")
-    print(f"  Retain vs Test  AUC : {result['retain_test_auc']:.4f}  "
+    logger.info(f"  Retain vs Test  AUC : {result['retain_test_auc']:.4f}  "
           f"(higher = model distinguishes members)")
-    print(f"  Forget vs Test  AUC : {result['forget_test_auc']:.4f}  "
+    logger.info(f"  Forget vs Test  AUC : {result['forget_test_auc']:.4f}  "
           f"(target: 0.5000 = perfectly forgotten)")
-    print(f"  Forget Advantage    : {result['forget_advantage']:.4f}  "
+    logger.info(f"  Forget Advantage    : {result['forget_advantage']:.4f}  "
           f"(target: 0.0000)")
-    print(f"  Forget vs Test  Acc : {result['forget_test_acc']:.4f}  "
+    logger.info(f"  Forget vs Test  Acc : {result['forget_test_acc']:.4f}  "
           f"(target: ~0.5000)")
 
 
 def print_per_identity_summary(result: dict[str, Any]) -> None:
     """Print per-identity MIA summary."""
-    print(f"\n[Per-Identity MIA — {result.get('head', '?')} head / "
+    logger.info(f"\n[Per-Identity MIA — {result.get('head', '?')} head / "
           f"{result.get('score_type', '?')}]")
-    print(f"  Identities: {result['n_identities']}")
-    print(f"  Mean AUC:   {result['mean_auc']:.4f} ± {result['std_auc']:.4f}")
-    print(f"  Max  AUC:   {result['max_auc']:.4f}  (worst identity)")
-    print(f"  Min  AUC:   {result['min_auc']:.4f}  (best identity)")
-    print(f"  Max  image confidence: {result['max_image_confidence']:.4f}")
-    print(f"  Fraction leaked (AUC>0.55): {result['fraction_leaked']:.4f}")
+    logger.info(f"  Identities: {result['n_identities']}")
+    logger.info(f"  Mean AUC:   {result['mean_auc']:.4f} ± {result['std_auc']:.4f}")
+    logger.info(f"  Max  AUC:   {result['max_auc']:.4f}  (worst identity)")
+    logger.info(f"  Min  AUC:   {result['min_auc']:.4f}  (best identity)")
+    logger.info(f"  Max  image confidence: {result['max_image_confidence']:.4f}")
+    logger.info(f"  Fraction leaked (AUC>0.55): {result['fraction_leaked']:.4f}")

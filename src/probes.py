@@ -31,6 +31,11 @@ from torch.utils.data import DataLoader
 from dataset import VirtualIdentityDataset, get_val_transform
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 # ── Feature extraction ────────────────────────────────────────────────────────
 
 
@@ -270,6 +275,7 @@ def measure_forgetting(
     """
     from sklearn.metrics.pairwise import cosine_similarity
 
+
     def _centroid(_model, _split):
         ds = VirtualIdentityDataset(csv_path, split=_split, transform=get_val_transform())
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
@@ -307,15 +313,15 @@ def measure_forgetting(
 
 def print_probe_summary(results: dict[str, Any]) -> None:
     """Pretty-print probe results."""
-    print(f"\n{'='*60}")
-    print("  REPRESENTATION PROBE RESULTS")
-    print(f"{'='*60}")
-    print(f"{'Probe':<12} {'Accuracy':>10} {'Chance':>10} {'Δ':>10}")
-    print("-" * 44)
+    logger.info(f"\n{'='*60}")
+    logger.info("  REPRESENTATION PROBE RESULTS")
+    logger.info(f"{'='*60}")
+    logger.info(f"{'Probe':<12} {'Accuracy':>10} {'Chance':>10} {'Δ':>10}")
+    logger.info("-" * 44)
     for name, res in results.items():
         if res is None:
             continue
         acc = res["accuracy"]
         ch  = res["chance_level"]
-        print(f"{name:<12} {acc:>10.4f} {ch:>10.4f} {acc - ch:>+10.4f}")
-    print("=" * 60)
+        logger.info(f"{name:<12} {acc:>10.4f} {ch:>10.4f} {acc - ch:>+10.4f}")
+    logger.info("=" * 60)

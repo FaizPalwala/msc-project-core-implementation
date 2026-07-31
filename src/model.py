@@ -28,6 +28,10 @@ import torch
 import torch.nn as nn
 from torchvision.models import resnet18, ResNet18_Weights
 
+
+import logging
+
+logger = logging.getLogger(__name__)
 # ── Class counts ──────────────────────────────────────────────────────────────
 
 NUM_IDENTITY_CLASSES = 600   # one per SFHQ-InstantID cluster
@@ -152,7 +156,7 @@ def save_model(
         payload["epoch"] = epoch
 
     torch.save(payload, save_path)
-    print(f"[OK] Model saved → {save_path}")
+    logger.info(f"[OK] Model saved → {save_path}")
 
 
 def load_model(
@@ -181,7 +185,7 @@ def load_model(
         model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
     else:
         # Legacy single-head checkpoint → identity head random, age head loaded
-        print("[INFO] Legacy single-head checkpoint detected — "
+        logger.info("[INFO] Legacy single-head checkpoint detected — "
               "loading into age head; identity head will be randomly initialised.")
         age_cls = checkpoint.get("num_classes", NUM_AGE_CLASSES)
         model = build_dual_head_resnet18(
@@ -206,10 +210,10 @@ def load_model(
         model.load_state_dict(new_sd, strict=False)
 
     model.to(device)
-    print(f"[OK] Model loaded ← {path}")
+    logger.info(f"[OK] Model loaded ← {path}")
     meta = checkpoint.get("metadata", {})
     if meta:
-        print(f"     Metadata: {meta}")
+        logger.info(f"     Metadata: {meta}")
     return model
 
 

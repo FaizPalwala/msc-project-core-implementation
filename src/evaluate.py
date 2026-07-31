@@ -20,6 +20,10 @@ from torch.utils.data import DataLoader
 from dataset import VirtualIdentityDataset, get_val_transform
 
 
+
+import logging
+
+logger = logging.getLogger(__name__)
 # ── Per-sample model evaluation (both heads) ──────────────────────────────────
 
 
@@ -147,9 +151,9 @@ def evaluate_full(
         results[split] = evaluate_model(model, loader, device)
 
     if verbose:
-        print(f"\n{'Split':<12} {'IdAcc':>9}  {'IdLoss':>9}  "
+        logger.info(f"\n{'Split':<12} {'IdAcc':>9}  {'IdLoss':>9}  "
               f"{'AgeAcc':>9}  {'AgeLoss':>9}  {'N':>7}")
-        print("-" * 58)
+        logger.info("-" * 58)
         for split, m in results.items():
             print(
                 f"{split:<12} {m['identity']['accuracy']:>9.4f}  "

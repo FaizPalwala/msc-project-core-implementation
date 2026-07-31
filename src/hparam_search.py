@@ -45,6 +45,11 @@ from mia import run_mia_per_identity
 from model import load_model
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Default search grids / ranges for each method
 # ──────────────────────────────────────────────────────────────────────────────
@@ -220,7 +225,7 @@ def run_trial(
     if method_name not in METHOD_REGISTRY:
         raise ValueError(f"Unknown method: {method_name}")
 
-    print(f"\n  Trial {trial_idx:>3} | {method_name} | {cfg}")
+    logger.info(f"\n  Trial {trial_idx:>3} | {method_name} | {cfg}")
     t0 = time.time()
 
     result = METHOD_REGISTRY[method_name](
@@ -271,7 +276,7 @@ def run_search(
     seed: int = 42,
 ) -> list[dict]:
     device = resolve_device(device_str)
-    print(f"\n[HPSearch] Method={method_name} | Type={search_type} | Device={device}")
+    logger.info(f"\n[HPSearch] Method={method_name} | Type={search_type} | Device={device}")
 
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -304,7 +309,7 @@ def run_search(
             configs = [_sample_random_config(ranges, seed=seed+i)
                        for i in range(n_random_trials)]
 
-    print(f"[HPSearch] {len(configs)} trials to run")
+    logger.info(f"[HPSearch] {len(configs)} trials to run")
 
     all_results = []
     for i, cfg in enumerate(configs):
@@ -315,11 +320,11 @@ def run_search(
             # Write to JSONL incrementally
             with open(out_jsonl, "a") as f:
                 f.write(json.dumps(trial) + "\n")
-            print(f"    UF={trial['uf_score']:.4f} | retain={trial['retain_acc']:.4f} "
+            logger.info(f"    UF={trial['uf_score']:.4f} | retain={trial['retain_acc']:.4f} "
                   f"| MIA_AUC={trial['mia_forget_auc']:.4f} "
                   f"| t={trial['unlearning_time_s']:.1f}s")
         except Exception as e:
-            print(f"  [WARN] Trial {i+1} failed: {e}")
+            logger.warning(f"  [WARN] Trial {i+1} failed: {e}")
             continue
 
     # Save summary CSV
@@ -336,14 +341,14 @@ def run_search(
 
         # Print top-5
         sorted_results = sorted(all_results, key=lambda x: x["uf_score"], reverse=True)
-        print(f"\n[HPSearch] Top-5 configs by UF score:")
-        print(f"{'Rank':>5} {'UF':>7} {'RetIdAcc':>10} {'MIA-AUC':>9} {'Time':>8}")
-        print("-" * 45)
+        logger.info(f"\n[HPSearch] Top-5 configs by UF score:")
+        logger.info(f"{'Rank':>5} {'UF':>7} {'RetIdAcc':>10} {'MIA-AUC':>9} {'Time':>8}")
+        logger.info("-" * 45)
         for rank, r in enumerate(sorted_results[:5], 1):
-            print(f"{rank:>5} {r['uf_score']:>7.4f} {r['retain_id_acc']:>10.4f} "
+            logger.info(f"{rank:>5} {r['uf_score']:>7.4f} {r['retain_id_acc']:>10.4f} "
                   f"{r['mia_mean_auc']:>9.4f} {r['unlearning_time_s']:>8.1f}s")
-        print(f"\n  Best config: {sorted_results[0]['config']}")
-        print(f"  Results saved → {out_csv}")
+        logger.info(f"\n  Best config: {sorted_results[0]['config']}")
+        logger.info(f"  Results saved → {out_csv}")
 
     return all_results
 

@@ -214,10 +214,10 @@ if __name__ == "__main__":
         # applies _make_canary + insert_canary, and writes back.
         # For now, just tag and save.
         df.to_csv(args.out, index=False)
-        print(f"[OK] Canary-tagged CSV → {args.out}")
-        print(f"     Identities: {args.identities}")
-        print(f"     NOTE: pixel insertion requires image I/O — ")
-        print(f"     modify images in data/processed/ before training.")
+        logger.info(f"[OK] Canary-tagged CSV → {args.out}")
+        logger.info(f"     Identities: {args.identities}")
+        logger.info(f"     NOTE: pixel insertion requires image I/O — ")
+        logger.info(f"     modify images in data/processed/ before training.")
 
     elif args.command == "verify":
         device = resolve_device(args.device)
@@ -225,4 +225,4 @@ if __name__ == "__main__":
         results = verify_canary_unlearning(
             model, args.csv, device, args.identities,
         )
-        print(json.dumps(results, indent=2))
+        logger.info(json.dumps(results, indent=2))

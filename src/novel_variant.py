@@ -23,6 +23,10 @@ from dataset import VirtualIdentityDataset, get_val_transform
 from model import copy_model
 
 
+
+import logging
+
+logger = logging.getLogger(__name__)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -140,7 +144,7 @@ def msg_kd(
     criterion = nn.CrossEntropyLoss()
     kl_crit = nn.KLDivLoss(reduction="batchmean", log_target=True)
 
-    print(f"  [MSG-KD] Building saliency mask (k={topk_fraction*100:.0f}%)…")
+    logger.info(f"  [MSG-KD] Building saliency mask (k={topk_fraction*100:.0f}%)…")
     unlearn_m.eval()
     mask = _build_mask(unlearn_m, f_loader, r_loader, criterion, device,
                        mask_grad_batches, topk_fraction)
@@ -155,7 +159,7 @@ def msg_kd(
 
     n_masked = sum(m.sum().item() for m in mask.values())
     n_total = sum(p.numel() for p in unlearn_m.parameters())
-    print(f"  [MSG-KD] Mask: {n_masked:,.0f}/{n_total:,.0f} params ({100*n_masked/n_total:.1f}%)")
+    logger.info(f"  [MSG-KD] Mask: {n_masked:,.0f}/{n_total:,.0f} params ({100*n_masked/n_total:.1f}%)")
 
     optimizer = torch.optim.Adam(unlearn_m.parameters(), lr=msg_lr)
     opt_r = torch.optim.Adam(unlearn_m.parameters(), lr=retain_reg_lr)
@@ -262,7 +266,7 @@ def adaptiformet(
     f_iter = _cycle(f_loader)
     r_iter = _cycle(r_loader)
 
-    print(f"  [AdaptiForget] Building initial mask (k={topk_fraction*100:.0f}%)…")
+    logger.info(f"  [AdaptiForget] Building initial mask (k={topk_fraction*100:.0f}%)…")
     mask = _build_mask(unlearn_m, f_loader, r_loader, criterion, device,
                        mask_grad_batches, topk_fraction)
 
@@ -279,7 +283,7 @@ def adaptiformet(
     hooks = _attach_hooks(unlearn_m, mask)
     n_masked = sum(v.sum().item() for v in mask.values())
     n_total = sum(p.numel() for p in unlearn_m.parameters())
-    print(f"  [AdaptiForget] Mask: {n_masked:,.0f}/{n_total:,.0f} params "
+    logger.info(f"  [AdaptiForget] Mask: {n_masked:,.0f}/{n_total:,.0f} params "
           f"({100*n_masked/n_total:.1f}%)")
 
     def _quick_retain_acc(m, n_batches=10):
@@ -357,14 +361,14 @@ def adaptiformet(
             r_acc = _quick_retain_acc(unlearn_m)
 
             if proxy < early_stop_adv:
-                print(f"  [AdaptiForget] Early stop at step {step+1}: proxy_adv={proxy:.3f}")
+                logger.info(f"  [AdaptiForget] Early stop at step {step+1}: proxy_adv={proxy:.3f}")
                 stopped_at = step + 1
                 break
 
             if r_acc < retain_drop_threshold:
                 patience_count += 1
                 if patience_count >= early_stop_patience // 25:
-                    print(f"  [AdaptiForget] Early stop at step {step+1}: "
+                    logger.info(f"  [AdaptiForget] Early stop at step {step+1}: "
                           f"retain_acc={r_acc:.3f} dropped {retain_drop_tol}")
                     stopped_at = step + 1
                     break

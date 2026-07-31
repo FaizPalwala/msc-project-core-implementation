@@ -43,6 +43,9 @@ from baselines import BASELINE_REGISTRY
 from sota_methods import SOTA_REGISTRY
 from novel_variant import NOVEL_REGISTRY
 
+import logging
+
+logger = logging.getLogger(__name__)
 METHOD_REGISTRY = {**BASELINE_REGISTRY, **SOTA_REGISTRY, **NOVEL_REGISTRY}
 
 
@@ -130,19 +133,19 @@ def run_iterative(
     original_model = load_model(model_path, device=str(device))
     current_model = copy_model(original_model, device)
 
-    print(f"\n{'─'*65}")
-    print(f"  Iterative: {method_name.upper()} | {n_steps} steps | {mode}")
-    print(f"{'─'*65}")
+    logger.info(f"\n{'─'*65}")
+    logger.info(f"  Iterative: {method_name.upper()} | {n_steps} steps | {mode}")
+    logger.info(f"{'─'*65}")
 
     # Baseline (step 0)
-    print(f"\n  [Step 0 / baseline] Evaluating original model…")
+    logger.info(f"\n  [Step 0 / baseline] Evaluating original model…")
     baseline = _step_eval(original_model, original_model, csv_path, device, forget_step=0)
     baseline.update({
         "step": 0, "method": method_name, "mode": mode,
         "step_time_s": 0.0, "cumulative_time_s": 0.0,
         "is_baseline": True,
     })
-    print(f"    retain={baseline['retain_acc']:.4f} | "
+    logger.info(f"    retain={baseline['retain_acc']:.4f} | "
           f"mia_mean={baseline['mia_mean_auc']:.4f} | "
           f"drift={baseline['model_drift']:.2f}")
 
@@ -155,7 +158,7 @@ def run_iterative(
     step_identities: dict[int, set[int]] = {}
 
     for step in range(n_steps):
-        print(f"\n  [Step {step+1}/{n_steps}] {method_name} | forget_step={step}")
+        logger.info(f"\n  [Step {step+1}/{n_steps}] {method_name} | forget_step={step}")
         t0 = time.time()
 
         start_model = original_model if mode == "fresh" else current_model
@@ -191,7 +194,7 @@ def run_iterative(
                     if k != "history"
                 },
             }
-            print(
+            logger.info(
                 f"    retain={metrics['retain_acc']:.4f} | "
                 f"mia={metrics['mia_mean_auc']:.4f} | "
                 f"adv={metrics['forget_advantage']:.4f} | "
@@ -206,7 +209,7 @@ def run_iterative(
             step_models[step] = copy_model(current_model, device)
 
         except Exception as e:
-            print(f"  [WARN] Step {step+1} failed: {e}")
+            logger.warning(f"  [WARN] Step {step+1} failed: {e}")
             import traceback
             traceback.print_exc()
             record = {
@@ -222,7 +225,7 @@ def run_iterative(
         if check_step > n_steps or check_step not in step_models:
             continue
         model_at_check = step_models[check_step]
-        print(f"\n  [Re-emergence @ step {check_step}]")
+        logger.info(f"\n  [Re-emergence @ step {check_step}]")
 
         for earlier_step in range(check_step):
             if earlier_step not in step_models:
@@ -245,7 +248,7 @@ def run_iterative(
 
     # ── CSV ───────────────────────────────────────────────────────────
     _write_csv(all_records, out_path / f"{method_name}_summary.csv")
-    print(f"\n  ✓ {method_name} done. {len(all_records)} records")
+    logger.info(f"\n  ✓ {method_name} done. {len(all_records)} records")
     return all_records
 
 
@@ -272,7 +275,7 @@ def run_all_iterative(
         methods = sorted(m for m in METHOD_REGISTRY if m in method_configs)
     if "retrain" in methods:
         methods = [m for m in methods if m != "retrain"]
-        print("[INFO] Retrain oracle skipped in iterative mode (too expensive)")
+        logger.info("[INFO] Retrain oracle skipped in iterative mode (too expensive)")
 
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -300,7 +303,7 @@ def run_all_iterative(
     for method, records in all_results.items():
         combined.extend(records)
     _write_csv(combined, out_path / "iterative_combined.csv")
-    print(f"\n[OK] Combined CSV → {out_path}/iterative_combined.csv")
+    logger.info(f"\n[OK] Combined CSV → {out_path}/iterative_combined.csv")
 
     _print_summary(all_results)
     return all_results
@@ -342,12 +345,12 @@ def _write_csv(records: list[dict[str, Any]], path: Path) -> None:
 
 
 def _print_summary(all_results: dict) -> None:
-    print(f"\n{'='*80}")
-    print("  ITERATIVE UNLEARNING SUMMARY")
-    print(f"{'='*80}")
-    print(f"{'Method':<16} {'MIA@5':>8} {'MIA@10':>8} {'MIA@15':>8} "
+    logger.info(f"\n{'='*80}")
+    logger.info("  ITERATIVE UNLEARNING SUMMARY")
+    logger.info(f"{'='*80}")
+    logger.info(f"{'Method':<16} {'MIA@5':>8} {'MIA@10':>8} {'MIA@15':>8} "
           f"{'ΔRetain':>9} {'Drift@End':>10} {'Time(min)':>10}")
-    print("─" * 72)
+    logger.info("─" * 72)
 
     for method, records in all_results.items():
         data = [r for r in records
@@ -367,16 +370,22 @@ def _print_summary(all_results: dict) -> None:
         d_ret = rets[-1] - rets[0] if len(rets) >= 2 else 0.0
         ttl = records[-1].get("cumulative_time_s", 0) / 60
 
-        print(
+        logger.info(
             f"{method:<16} {_at(5, mias):>8.4f} {_at(10, mias):>8.4f} "
             f"{_at(15, mias):>8.4f} {d_ret:>+9.4f} "
             f"{_at(len(drift), drift):>10.2f} {ttl:>10.1f}"
         )
-    print("=" * 80)
+    logger.info("=" * 80)
 
 
 def main() -> None:
-    """CLI entry point for iterative unlearning protocol."""
+    """
+    logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+    CLI entry point for iterative unlearning protocol."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv",               type=str, required=True)
     parser.add_argument("--model",             type=str, required=True)
@@ -398,7 +407,7 @@ def main() -> None:
         for si in range(args.n_seeds):
             seed = args.seed + si
             seed_dir = f"{args.out}/seed_{seed}"
-            print(f"\n{'#'*70}\n  SEED {si+1}/{args.n_seeds} (seed={seed})\n{'#'*70}")
+            logger.info(f"\n{'#'*70}\n  SEED {si+1}/{args.n_seeds} (seed={seed})\n{'#'*70}")
             run_all_iterative(
                 csv_path=args.csv,
                 model_path=args.model,
