@@ -28,6 +28,7 @@ from evaluate import evaluate_full
 from mia import run_mia_full, run_mia_per_identity
 from model import load_model
 from novel_variant import adaptiformet
+from interfaces import validate_unlearning_result
 
 
 
@@ -69,6 +70,7 @@ def run_ablation(
         cfg = {**base_cfg, **overrides}
         logger.info(f"\n  ── {name}")
         res = adaptiformet(original, csv_path, device, seed=seed, **cfg)
+        validate_unlearning_result(res, "adaptiformet")
         m = res["model"]
 
         ev = evaluate_full(m, csv_path, device, verbose=False)

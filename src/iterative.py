@@ -42,6 +42,7 @@ from model import load_model, copy_model
 from baselines import BASELINE_REGISTRY
 from sota_methods import SOTA_REGISTRY
 from novel_variant import NOVEL_REGISTRY
+from interfaces import validate_unlearning_result
 
 import logging
 
@@ -172,6 +173,7 @@ def run_iterative(
                 seed=seed + step,
                 **method_cfg,
             )
+            validate_unlearning_result(result, method_name)
             current_model = result["model"]
             step_time = time.time() - t0
             cumulative_time += step_time

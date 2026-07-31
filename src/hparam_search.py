@@ -43,6 +43,7 @@ from device_utils import resolve_device
 from evaluate import evaluate_full
 from mia import run_mia_per_identity
 from model import load_model
+from interfaces import validate_unlearning_result
 
 
 import logging
@@ -234,6 +235,7 @@ def run_trial(
         device=device,
         **cfg,
     )
+    validate_unlearning_result(result, method_name)
     unlearned = result["model"]
     elapsed = time.time() - t0
 

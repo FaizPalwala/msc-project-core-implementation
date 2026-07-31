@@ -10,15 +10,21 @@ welcome in the following areas.
    signature used by all methods in `src/baselines.py`:
 
    ```python
+   from interfaces import UnlearningResult
+
    def my_method(
        model: nn.Module,
        csv_path: str,
        device: torch.device,
        **kwargs,
-   ) -> dict:
+   ) -> UnlearningResult:
        ...
        return {"model": unlearned_model, "method": "MyMethod", "metrics": {...}}
    ```
+
+   The return contract (`UnlearningResult`) requires `model`, `method`, and
+   `metrics` keys — see `src/interfaces.py`.  Every runner validates the
+   contract after calling your method, so violations surface immediately.
 
 2. The model is a dual-head ResNet-18.  `model(x)` returns
    `(identity_logits, age_logits)`.  Use the shared `_combined_loss()` helper

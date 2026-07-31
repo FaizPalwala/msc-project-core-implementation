@@ -35,6 +35,7 @@ from model import load_model
 from baselines import BASELINE_REGISTRY
 from sota_methods import SOTA_REGISTRY
 from novel_variant import NOVEL_REGISTRY
+from interfaces import validate_unlearning_result
 
 import logging
 
@@ -126,6 +127,7 @@ def run_single_shot(
                 seed=seed,
                 **cfg,
             )
+            validate_unlearning_result(result, method_name)
             unlearned_model = result["model"]
             method_metrics  = result["metrics"]
 
