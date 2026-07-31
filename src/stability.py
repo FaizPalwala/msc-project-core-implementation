@@ -1,0 +1,455 @@
+"""
+stability.py — Stability Analysis & Visualisation (extended suite).
+
+Generates publication-quality plots from iterative unlearning results:
+
+Core (from original suite):
+  01. Retain Accuracy vs. Iteration
+  02. MIA AUC vs. Iteration
+  03. Forget Advantage vs. Iteration
+  04. Model Drift vs. Iteration
+  05. Step Time vs. Iteration
+  06. Pareto scatter: Retain Acc vs. MIA AUC
+  07. Heatmap: Forget Advantage across methods × steps
+  08. Radar chart: final-step multi-metric comparison
+  09. Cumulative Time vs. Iteration
+
+New:
+  10. Per-identity forgetting signatures (sorted bar chart of per-ID MIA AUC)
+  11. Demographic breakdown heatmap (rows=age groups/gender/popularity)
+  12. Within-step boxplots (4 identities per step confidence distribution)
+  13. Phase-space trajectory (forget loss vs retain loss, connected by steps)
+
+All plots at 300 DPI, publication-ready.
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import warnings
+from pathlib import Path
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import matplotlib.patches as mpatches
+import numpy as np
+import pandas as pd
+
+warnings.filterwarnings("ignore")
+
+# ── Style ─────────────────────────────────────────────────────────────────────
+
+plt.rcParams.update({
+    "figure.dpi": 150, "savefig.dpi": 300,
+    "font.family": "sans-serif", "font.size": 11,
+    "axes.spines.top": False, "axes.spines.right": False,
+    "axes.grid": True, "grid.alpha": 0.3, "grid.linestyle": "--",
+    "lines.linewidth": 2.0, "lines.markersize": 6,
+})
+
+METHOD_STYLES = {
+    "no_unlearning": {"color": "#9e9e9e", "ls": ":",  "marker": "x", "label": "No-Op"},
+    "ga":            {"color": "#e57373", "ls": "--", "marker": "s", "label": "GA"},
+    "srl":           {"color": "#ffb74d", "ls": "--", "marker": "^", "label": "SRL"},
+    "ft":            {"color": "#fff176", "ls": "--", "marker": "D", "label": "FT"},
+    "ng_plus":       {"color": "#64b5f6", "ls": "-",  "marker": "o", "label": "NG+"},
+    "msg":           {"color": "#4db6ac", "ls": "-",  "marker": "v", "label": "MSG"},
+    "msg_kd":        {"color": "#81c784", "ls": "-",  "marker": "P", "label": "MSG-KD"},
+    "ct":            {"color": "#ba68c8", "ls": "-",  "marker": "h", "label": "CT"},
+    "adaptiformet":  {"color": "#ff7043", "ls": "-",  "marker": "*", "label": "AdaptiForget"},
+}
+ORACLE_COLOR = "#1565c0"
+
+
+def _style(method: str) -> dict:
+    return METHOD_STYLES.get(method, {"color": "#555", "ls": "-",
+                                       "marker": "o", "label": method})
+
+
+# ── Data loading ──────────────────────────────────────────────────────────────
+
+
+def load_data(combined_csv: str) -> pd.DataFrame:
+    df = pd.read_csv(combined_csv)
+    if "is_baseline" in df.columns:
+        df = df[df["is_baseline"] != True]
+    if "step" in df.columns:
+        df["step"] = df["step"].astype(int)
+    for col in ["retain_acc", "test_acc", "forget_acc",
+                "retain_age_acc", "mia_mean_auc", "mia_max_auc",
+                "forget_advantage", "model_drift",
+                "step_time_s", "cumulative_time_s", "fraction_leaked"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
+# ── Plot helpers ──────────────────────────────────────────────────────────────
+
+
+def _plot_vs_step(df, metric, ylabel, title, out_file,
+                  target_line=None, target_label=None, ylim=None):
+    fig, ax = plt.subplots(figsize=(9, 5))
+    methods = sorted(df["method"].unique())
+    for method in methods:
+        sub = df[df["method"] == method].sort_values("step")
+        s = _style(method)
+        ax.plot(sub["step"], sub[metric],
+                color=s["color"], ls=s["ls"], marker=s["marker"],
+                label=s["label"], alpha=0.9)
+    if target_line is not None:
+        ax.axhline(target_line, color=ORACLE_COLOR, ls=":", lw=1.5,
+                   label=target_label or f"Target ({target_line})", alpha=0.7)
+    ax.set_xlabel("Forget step")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title, fontweight="bold", pad=10)
+    if ylim:
+        ax.set_ylim(*ylim)
+    ax.legend(loc="best", fontsize=9, ncol=2)
+    fig.tight_layout()
+    fig.savefig(out_file, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {out_file.name}")
+
+
+# ── Core plots (01–09) ────────────────────────────────────────────────────────
+
+
+def plot_retain_acc(df, out_dir: Path):
+    _plot_vs_step(df, "retain_acc", "Retain Identity Accuracy",
+                  "Retain Accuracy vs. Iteration", out_dir / "01_retain_acc.png",
+                  ylim=(0.0, 1.05))
+
+
+def plot_mia_auc(df, out_dir: Path):
+    _plot_vs_step(df, "mia_mean_auc", "MIA AUC (identity head)",
+                  "MIA AUC vs. Iteration", out_dir / "02_mia_auc.png",
+                  target_line=0.50, target_label="Perfect forgetting (0.50)",
+                  ylim=(0.40, 1.05))
+
+
+def plot_forget_advantage(df, out_dir: Path):
+    _plot_vs_step(df, "forget_advantage", "Forget Advantage |AUC − 0.5|",
+                  "Forget Advantage vs. Iteration", out_dir / "03_forget_adv.png",
+                  target_line=0.0, target_label="Perfect forgetting",
+                  ylim=(-0.02, 0.55))
+
+
+def plot_model_drift(df, out_dir: Path):
+    _plot_vs_step(df, "model_drift", "Weight L₂ Distance from Original",
+                  "Model Drift vs. Iteration", out_dir / "04_model_drift.png")
+
+
+def plot_step_time(df, out_dir: Path):
+    _plot_vs_step(df, "step_time_s", "Step Time (s)",
+                  "Unlearning Step Time vs. Iteration", out_dir / "05_step_time.png")
+
+
+def plot_pareto(df, out_dir: Path):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    methods = sorted(df["method"].unique())
+    for method in methods:
+        sub = df[df["method"] == method].dropna(subset=["retain_acc", "mia_mean_auc"])
+        if sub.empty:
+            continue
+        s = _style(method)
+        sc = ax.scatter(sub["mia_mean_auc"], sub["retain_acc"],
+                        c=sub["step"], cmap="Blues", vmin=1,
+                        vmax=df["step"].max(), alpha=0.75,
+                        edgecolors=s["color"], linewidths=1.5,
+                        marker=s["marker"], s=60, label=s["label"])
+    ax.axvline(0.50, color=ORACLE_COLOR, ls=":", lw=1.5, alpha=0.7,
+               label="Perfect MIA (0.50)")
+    ax.set_xlabel("MIA AUC (← better forgetting)")
+    ax.set_ylabel("Retain Accuracy (↑ better)")
+    ax.set_title("Pareto Frontier: Utility vs. Forgetting", fontweight="bold")
+    ax.legend(loc="lower right", fontsize=8, ncol=2)
+    plt.colorbar(ax.collections[0], ax=ax, label="Step") if ax.collections else None
+    fig.tight_layout()
+    fig.savefig(out_dir / "06_pareto.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  Saved: 06_pareto.png")
+
+
+def plot_heatmap(df, out_dir: Path):
+    methods = sorted(df["method"].unique())
+    steps = sorted(df["step"].unique())
+    matrix = np.full((len(methods), len(steps)), np.nan)
+    for i, m in enumerate(methods):
+        for j, s in enumerate(steps):
+            sub = df[(df["method"] == m) & (df["step"] == s)]
+            if "forget_advantage" in sub.columns and len(sub):
+                matrix[i, j] = sub["forget_advantage"].mean()
+    fig, ax = plt.subplots(figsize=(max(10, len(steps)*0.6),
+                                    max(4, len(methods)*0.7)))
+    im = ax.imshow(matrix, cmap="RdYlGn_r", vmin=0, vmax=0.5,
+                   aspect="auto", interpolation="nearest")
+    ax.set_xticks(range(len(steps))); ax.set_xticklabels(steps, fontsize=8)
+    ax.set_yticks(range(len(methods)))
+    ax.set_yticklabels([_style(m)["label"] for m in methods], fontsize=9)
+    ax.set_xlabel("Forget step")
+    ax.set_title("Forget Advantage Heatmap (↓ = better)", fontweight="bold", pad=10)
+    plt.colorbar(im, ax=ax, label="|AUC − 0.5|")
+    fig.tight_layout()
+    fig.savefig(out_dir / "07_heatmap.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  Saved: 07_heatmap.png")
+
+
+def plot_radar(df, out_dir: Path):
+    metrics = ["retain_acc", "test_acc", "forget_quality", "mia_quality", "speed"]
+    max_step = df["step"].max()
+    final = df[df["step"] == max_step].copy()
+    if "forget_advantage" in final.columns:
+        final["forget_quality"] = 1.0 - final["forget_advantage"].clip(0, 0.5) / 0.5
+    if "mia_mean_auc" in final.columns:
+        final["mia_quality"] = 1.0 - (final["mia_mean_auc"] - 0.5).abs().clip(0, 0.5) / 0.5
+    t_max = final["step_time_s"].max() if "step_time_s" in final.columns else 1
+    final["speed"] = 1.0 - (final["step_time_s"] / max(t_max, 1)).clip(0, 1) if "step_time_s" in final.columns else 0
+
+    labels = ["Retain Acc", "Test Acc", "Forget\nQuality", "MIA\nQuality", "Speed"]
+    N = len(labels); angles = [n / N * 2 * math.pi for n in range(N)] + [0]
+
+    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw={"polar": True})
+    for method in [m for m in METHOD_STYLES if m in final["method"].values]:
+        sub = final[final["method"] == method]
+        if sub.empty: continue
+        vals = [max(0, min(1, float(sub[m].mean()))) for m in metrics[:N]]
+        vals += [vals[0]]
+        s = _style(method)
+        ax.plot(angles, vals, color=s["color"], lw=2, label=s["label"])
+        ax.fill(angles, vals, color=s["color"], alpha=0.1)
+    ax.set_xticks(angles[:-1]); ax.set_xticklabels(labels, fontsize=11)
+    ax.set_ylim(0, 1)
+    ax.set_title("Final-Step Multi-Metric (outer=better)", fontweight="bold", y=1.08)
+    ax.legend(loc="upper right", bbox_to_anchor=(1.35, 1.1), fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out_dir / "08_radar.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  Saved: 08_radar.png")
+
+
+def plot_cumulative_time(df, out_dir: Path):
+    _plot_vs_step(df, "cumulative_time_s", "Cumulative Time (s)",
+                  "Cumulative Time vs. Iteration", out_dir / "09_cumulative_time.png")
+
+
+# ── New plots (10–13) ─────────────────────────────────────────────────────────
+
+
+def plot_per_identity_signatures(
+    per_id_csv: str | None,
+    out_dir: Path,
+) -> None:
+    """Per-identity MIA AUC bar chart (sorted, one panel per method).
+
+    Requires per-identity MIA output from single-shot evaluation.
+    Falls back gracefully if file not found.
+    """
+    if per_id_csv is None or not Path(per_id_csv).exists():
+        print("  [SKIP] 10_identity_signatures — no per-identity data")
+        return
+
+    df = pd.read_csv(per_id_csv)
+    fig, axes = plt.subplots(3, 3, figsize=(16, 14))
+    axes = axes.flatten()
+
+    for ax, (method, group) in zip(axes, df.groupby("method")):
+        aucs = group.sort_values("mia_auc", ascending=False)
+        colors = ["#e57373" if a > 0.55 else "#81c784" for a in aucs["mia_auc"]]
+        ax.bar(range(len(aucs)), aucs["mia_auc"], color=colors, width=0.8)
+        ax.axhline(0.50, color="grey", ls="--", lw=1, alpha=0.5)
+        ax.set_title(_style(method)["label"], fontsize=10)
+        ax.set_ylabel("MIA AUC")
+        ax.set_ylim(0.40, 1.0)
+
+    for ax in axes[len(df["method"].unique()):]:
+        ax.set_visible(False)
+
+    fig.suptitle("Per-Identity Forgetting Signatures\n(red = leaked > 0.55, green = forgotten)",
+                 fontweight="bold", fontsize=14)
+    fig.tight_layout()
+    fig.savefig(out_dir / "10_identity_signatures.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  Saved: 10_identity_signatures.png")
+
+
+def plot_demographic_heatmap(
+    demog_csv: str | None,
+    out_dir: Path,
+) -> None:
+    """Demographic-stratified MIA AUC heatmap.
+
+    Requires demographic MIA output from single-shot evaluation.
+    """
+    if demog_csv is None or not Path(demog_csv).exists():
+        print("  [SKIP] 11_demographic_heatmap — no demographic data")
+        return
+
+    df = pd.read_csv(demog_csv)
+    pivoted = df.pivot_table(
+        index="demographic_group", columns="method",
+        values="mia_auc", aggfunc="mean",
+    )
+
+    fig, ax = plt.subplots(figsize=(max(8, len(pivoted.columns)*1.2),
+                                    max(4, len(pivoted.index)*0.6)))
+    im = ax.imshow(pivoted.values, cmap="RdYlGn_r", vmin=0.45, vmax=0.65,
+                   aspect="auto")
+    ax.set_xticks(range(len(pivoted.columns)))
+    ax.set_xticklabels(pivoted.columns, rotation=45, ha="right", fontsize=9)
+    ax.set_yticks(range(len(pivoted.index)))
+    ax.set_yticklabels(pivoted.index, fontsize=9)
+    ax.set_title("MIA AUC by Demographic Group\n(↓ = better forgetting)", fontweight="bold")
+    plt.colorbar(im, ax=ax, label="MIA AUC")
+    fig.tight_layout()
+    fig.savefig(out_dir / "11_demographic_heatmap.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  Saved: 11_demographic_heatmap.png")
+
+
+def plot_phase_space(
+    df: pd.DataFrame,
+    out_dir: Path,
+) -> None:
+    """Forget loss trajectory in phase space (if loss columns present).
+
+    Plots forget loss progression across steps connected by arrows.
+    """
+    if "mia_mean_auc" not in df.columns or "retain_acc" not in df.columns:
+        print("  [SKIP] 12_phase_space — missing required columns")
+        return
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+    methods = sorted(df["method"].unique())
+
+    for method in methods:
+        sub = df[df["method"] == method].sort_values("step")
+        if len(sub) < 2:
+            continue
+        s = _style(method)
+        x = sub["mia_mean_auc"].values
+        y = sub["retain_acc"].values
+        # Points
+        ax.scatter(x, y, color=s["color"], marker=s["marker"],
+                   s=40, alpha=0.7, label=s["label"])
+        # Arrows
+        for i in range(len(x) - 1):
+            ax.annotate("", xy=(x[i+1], y[i+1]), xytext=(x[i], y[i]),
+                        arrowprops=dict(arrowstyle="->", color=s["color"],
+                                        lw=1.5, alpha=0.4))
+
+    ax.axvline(0.50, color=ORACLE_COLOR, ls=":", lw=1.5, alpha=0.7, label="Perfect forgetting")
+    ax.set_xlabel("MIA AUC →")
+    ax.set_ylabel("Retain Accuracy →")
+    ax.set_title("Unlearning Trajectory: Forgetting vs. Utility\n(arrows = sequential steps)",
+                 fontweight="bold")
+    ax.legend(fontsize=9, ncol=2)
+    ax.invert_xaxis()  # better forgetting = left
+    fig.tight_layout()
+    fig.savefig(out_dir / "12_phase_space.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  Saved: 12_phase_space.png")
+
+
+def plot_fraction_leaked(df: pd.DataFrame, out_dir: Path) -> None:
+    """Fraction of leaked identities (AUC > 0.55) over steps."""
+    if "fraction_leaked" not in df.columns:
+        print("  [SKIP] 13_fraction_leaked — column not found")
+        return
+    _plot_vs_step(df, "fraction_leaked", "Fraction Identities Leaked (AUC > 0.55)",
+                  "Identity Leakage Rate vs. Iteration",
+                  out_dir / "13_fraction_leaked.png",
+                  target_line=0.0, target_label="Zero leakage", ylim=(-0.02, 1.05))
+
+
+# ── Summary statistics ────────────────────────────────────────────────────────
+
+
+def compute_summary_stats(df: pd.DataFrame, out_dir: Path) -> None:
+    cols = ["retain_acc", "test_acc", "forget_advantage", "mia_mean_auc",
+            "model_drift", "step_time_s"]
+    rows = []
+    for method in sorted(df["method"].unique()):
+        sub = df[df["method"] == method]
+        row = {"method": _style(method)["label"]}
+        for c in cols:
+            if c in sub.columns:
+                row[f"{c}_mean"] = round(sub[c].mean(), 4)
+                row[f"{c}_std"] = round(sub[c].std(), 4)
+                final_step = sub["step"].max()
+                row[f"{c}_final"] = round(
+                    sub[sub["step"] == final_step][c].mean(), 4,
+                )
+        rows.append(row)
+
+    summary_df = pd.DataFrame(rows)
+    path = out_dir / "stability_summary.csv"
+    summary_df.to_csv(path, index=False)
+    print(f"\n  Summary stats → {path}")
+
+    # Print
+    cols_to_show = [c for c in ["method", "retain_acc_mean", "forget_advantage_mean",
+                                 "mia_mean_auc_final"] if c in summary_df.columns]
+    print(f"\n{'='*70}")
+    print("  STABILITY SUMMARY")
+    print(f"{'='*70}")
+    print(summary_df[cols_to_show].to_string(index=False))
+    print("=" * 70)
+
+
+# ── Master runner ─────────────────────────────────────────────────────────────
+
+
+def run_stability_analysis(
+    combined_csv: str,
+    out_dir: str = "results/iterative/plots",
+    per_id_csv: str | None = None,
+    demog_csv: str | None = None,
+) -> None:
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n[StabilityAnalysis] Loading {combined_csv}…")
+    df = load_data(combined_csv)
+    df = df[df.get("type", "") != "re_emergence"]  # filter re-emergence rows
+    print(f"  Methods: {sorted(df['method'].unique())}")
+    print(f"  Steps:   {sorted(df['step'].unique())}")
+    print(f"  Rows:    {len(df)}")
+
+    # Core
+    plot_retain_acc(df, out_path)
+    plot_mia_auc(df, out_path)
+    plot_forget_advantage(df, out_path)
+    plot_model_drift(df, out_path)
+    plot_step_time(df, out_path)
+    plot_pareto(df, out_path)
+    plot_heatmap(df, out_path)
+    plot_radar(df, out_path)
+    plot_cumulative_time(df, out_path)
+
+    # New
+    plot_per_identity_signatures(per_id_csv, out_path)
+    plot_demographic_heatmap(demog_csv, out_path)
+    plot_phase_space(df, out_path)
+    plot_fraction_leaked(df, out_path)
+
+    compute_summary_stats(df, out_path)
+    print(f"\n[OK] All plots → {out_path}/")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--combined",   type=str, required=True)
+    parser.add_argument("--out",        type=str, default="results/iterative/plots")
+    parser.add_argument("--per_id_csv", type=str, default=None)
+    parser.add_argument("--demog_csv",  type=str, default=None)
+    args = parser.parse_args()
+    run_stability_analysis(
+        args.combined, args.out,
+        per_id_csv=args.per_id_csv,
+        demog_csv=args.demog_csv,
+    )
