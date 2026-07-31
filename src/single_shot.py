@@ -287,6 +287,12 @@ def run_single_shot_multi_seed(
             agg[f"{key}_std"] = round(float(arr.std()), 4)
         aggregated[method] = agg
 
+    # ── Bootstrap oracle comparison ──────────────────────────────────────
+    p_values = _bootstrap_oracle_comparison(aggregated, n_seeds)
+    _add_p_values(aggregated, p_values)
+    if p_values:
+        logger.info(f"\n[OK] Bootstrap p-values computed for {len(p_values)} methods vs retrain oracle")
+
     # ── Save aggregated ───────────────────────────────────────────────────
     agg_path = out_path / "single_shot_aggregated.json"
     with open(agg_path, "w") as f:
@@ -379,6 +385,66 @@ def _print_aggregated_table(aggregated: dict, n_seeds: int) -> None:
         )
 
     logger.info("=" * 85)
+
+
+def _bootstrap_oracle_comparison(
+    aggregated: dict,
+    n_seeds: int,
+    n_bootstrap: int = 10_000,
+) -> dict[str, dict[str, float]]:
+    """Bootstrap comparison of each method vs retrain oracle.
+
+    Returns dict[method] → {metric: p_value}.
+    p < 0.05 = significantly different from oracle on that metric.
+    For MIA AUC / forget advantage / probe acc: one-tailed (method worse if higher).
+    For retain/test acc: one-tailed (method worse if lower).
+    """
+    if "retrain" not in aggregated or "error" in aggregated.get("retrain", {}):
+        return {}
+
+    oracle = aggregated["retrain"]
+    higher_is_worse = {
+        "mia_mean_auc", "mia_max_auc", "forget_advantage",
+        "mia_fraction_leaked", "max_conf_auc",
+        "probe_identity_acc", "probe_age_acc", "probe_gender_acc",
+    }
+    lower_is_worse = {"retain_id_acc", "retain_age_acc", "test_id_acc", "forget_id_acc"}
+
+    rng = np.random.RandomState(42)
+    p_values: dict[str, dict[str, float]] = {}
+
+    for method, agg in aggregated.items():
+        if method == "retrain" or "error" in agg:
+            continue
+        p_vals: dict[str, float] = {}
+        for metric in _AGGREGATABLE_KEYS:
+            std_key = f"{metric}_std"
+            if metric not in agg or metric not in oracle:
+                continue
+            mv, ov = agg[metric], oracle[metric]
+            ms = agg.get(std_key, max(abs(mv) * 0.01, 1e-6))
+            os_std = oracle.get(std_key, max(abs(ov) * 0.01, 1e-6))
+
+            o_samples = rng.normal(ov, max(os_std, 1e-6), n_bootstrap)
+            m_samples = rng.normal(mv, max(ms, 1e-6), n_bootstrap)
+
+            if metric in higher_is_worse:
+                p = float(np.mean(m_samples >= o_samples))
+            elif metric in lower_is_worse:
+                p = float(np.mean(m_samples <= o_samples))
+            else:
+                p = float(np.mean(np.abs(m_samples - o_samples)
+                                  >= np.abs(mv - ov)))
+            p_vals[metric] = round(p, 4)
+        p_values[method] = p_vals
+
+    return p_values
+
+
+def _add_p_values(aggregated: dict, p_values: dict) -> None:
+    for method, agg in aggregated.items():
+        if method in p_values:
+            agg["p_vs_oracle"] = p_values[method]
 
 
 def _clean_eval(eval_res: dict) -> dict:
@@ -476,13 +542,12 @@ def _save_csv(results: dict, out_path: Path) -> None:
 
 
 def main() -> None:
-    """
+    """CLI entry point for single-shot evaluation."""
     logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-    CLI entry point for single-shot evaluation."""
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv",          type=str, required=True)
     parser.add_argument("--model",        type=str, required=True)
