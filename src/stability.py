@@ -154,7 +154,7 @@ def _plot_vs_step(df, metric, ylabel, title, out_file,
     fig.tight_layout()
     fig.savefig(out_file, bbox_inches="tight")
     plt.close(fig)
-    logger.info(f"  Saved: {out_file.name}")
+    logger.info(f"  Saved: {Path(out_file).name}")
 
 
 # ── Core plots (01–09) ────────────────────────────────────────────────────────
