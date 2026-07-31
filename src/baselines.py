@@ -140,7 +140,7 @@ def retrain_oracle(
             retain_ds = ConcatDataset([retain_ds, extra])
 
     loader = DataLoader(retain_ds, batch_size=batch_size, shuffle=True,
-                        num_workers=4, pin_memory=True)
+                        num_workers=resolve_num_workers(), pin_memory=True)
 
     new_model = build_dual_head_resnet18(
         identity_classes=identity_classes,
@@ -313,7 +313,7 @@ def successive_random_relabelling(
     )
     relabelled = _RelabelledDataset(forget_ds, num_classes=identity_classes)
     loader = DataLoader(relabelled, batch_size=batch_size, shuffle=True,
-                        num_workers=2, pin_memory=True)
+                        num_workers=resolve_num_workers(), pin_memory=True)
 
     optimizer = torch.optim.Adam(unlearn_model.parameters(), lr=srl_lr)
     criterion = nn.CrossEntropyLoss()
@@ -367,7 +367,7 @@ def fine_tune_retain(
         csv_path, split="retain", transform=get_train_transform(),
     )
     loader = DataLoader(retain_ds, batch_size=batch_size, shuffle=True,
-                        num_workers=4, pin_memory=True)
+                        num_workers=resolve_num_workers(), pin_memory=True)
 
     optimizer = torch.optim.Adam(
         unlearn_model.parameters(), lr=ft_lr, weight_decay=weight_decay,

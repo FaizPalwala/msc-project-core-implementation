@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _loader(csv, split, transform, batch_size, shuffle=False, num_workers=2):
+def _loader(csv, split, transform, batch_size, shuffle=False, num_workers=resolve_num_workers()):
     ds = VirtualIdentityDataset(csv, split=split, transform=transform)
     return DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
                       num_workers=num_workers, pin_memory=True), len(ds)

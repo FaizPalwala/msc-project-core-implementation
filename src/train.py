@@ -25,7 +25,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 
 from dataset import VirtualIdentityDataset, get_train_transform, get_val_transform
-from device_utils import resolve_device
+from device_utils import resolve_device, resolve_num_workers
 from evaluate import evaluate_model
 from model import build_dual_head_resnet18, save_model, NUM_IDENTITY_CLASSES, NUM_AGE_CLASSES
 
@@ -201,11 +201,11 @@ def train(
     )
 
     trn_loader = DataLoader(trn_ds, batch_size=batch_size, shuffle=True,
-                            num_workers=4, pin_memory=True)
+                            num_workers=resolve_num_workers(), pin_memory=True)
     val_loader = DataLoader(val_ds, batch_size=128, shuffle=False,
-                            num_workers=4, pin_memory=True)
+                            num_workers=resolve_num_workers(), pin_memory=True)
     tst_loader = DataLoader(test_ds, batch_size=128, shuffle=False,
-                            num_workers=4, pin_memory=True)
+                            num_workers=resolve_num_workers(), pin_memory=True)
 
     logger.info(f"[INFO] Train: {len(trn_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
 
