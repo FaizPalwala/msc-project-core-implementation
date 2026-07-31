@@ -152,30 +152,117 @@ def plot_step_time(df, out_dir: Path):
                   "Unlearning Step Time vs. Iteration", out_dir / "05_step_time.png")
 
 
+def pareto_frontier(
+    x: np.ndarray,   # x = MIA AUC (lower is better)
+    y: np.ndarray,   # y = retain accuracy (higher is better)
+) -> np.ndarray:
+    """Return indices of non-dominated points (Pareto-optimal set).
+
+    A point dominates another if it is better (or equal) on both axes
+    and strictly better on at least one.  Here: lower x is better,
+    higher y is better.
+    """
+    n = len(x)
+    dominated = np.zeros(n, dtype=bool)
+    for i in range(n):
+        if dominated[i]:
+            continue
+        for j in range(n):
+            if i == j or dominated[j]:
+                continue
+            # j dominates i if x_j <= x_i and y_j >= y_i (strict on one)
+            if (x[j] <= x[i] and y[j] >= y[i]) and (x[j] < x[i] or y[j] > y[i]):
+                dominated[i] = True
+                break
+    return np.where(~dominated)[0]
+
+
+def hypervolume(
+    x: np.ndarray,   # lower is better
+    y: np.ndarray,   # higher is better
+    ref_x: float,
+    ref_y: float,
+) -> float:
+    """Hypervolume of the Pareto-optimal set relative to a reference point.
+
+    Reference point (ref_x, ref_y) is the WORST point (e.g. max MIA AUC,
+    min retain acc).  Larger hypervolume = better trade-off frontier.
+    """
+    # Filter to points strictly better than the reference
+    mask = (x < ref_x) & (y > ref_y)
+    if mask.sum() == 0:
+        return 0.0
+    xs = x[mask]
+    ys = y[mask]
+    # Sort by x descending (process from worst-x to best-x)
+    order = np.argsort(-xs)
+    xs = xs[order]
+    ys = ys[order]
+    vol = 0.0
+    prev_y = ref_y
+    for xi, yi in zip(xs, ys):
+        if yi > prev_y:
+            vol += (ref_x - xi) * (yi - prev_y)
+            prev_y = yi
+    return float(vol)
+
+
 def plot_pareto(df, out_dir: Path):
+    """Pareto scatter + computed frontier line + hypervolume annotation."""
     fig, ax = plt.subplots(figsize=(8, 6))
     methods = sorted(df["method"].unique())
+
+    frontier_x, frontier_y = [], []
+    all_x, all_y = [], []
+
     for method in methods:
         sub = df[df["method"] == method].dropna(subset=["retain_acc", "mia_mean_auc"])
         if sub.empty:
             continue
         s = _style(method)
-        sc = ax.scatter(sub["mia_mean_auc"], sub["retain_acc"],
-                        c=sub["step"], cmap="Blues", vmin=1,
-                        vmax=df["step"].max(), alpha=0.75,
-                        edgecolors=s["color"], linewidths=1.5,
-                        marker=s["marker"], s=60, label=s["label"])
+        x = sub["mia_mean_auc"].values
+        y = sub["retain_acc"].values
+        all_x.extend(x)
+        all_y.extend(y)
+        ax.scatter(x, y, c=sub["step"], cmap="Blues", vmin=1,
+                   vmax=df["step"].max(), alpha=0.75,
+                   edgecolors=s["color"], linewidths=1.5,
+                   marker=s["marker"], s=60, label=s["label"])
+
+        # Frontier for this method (its own steps)
+        idx = pareto_frontier(x, y)
+        frontier_x.extend(x[idx])
+        frontier_y.extend(y[idx])
+
+    # Global frontier across all points
+    if all_x:
+        gx = np.array(all_x)
+        gy = np.array(all_y)
+        g_idx = pareto_frontier(gx, gy)
+        fx = np.sort(gx[g_idx])
+        fy = gy[g_idx][np.argsort(gx[g_idx])]
+        ax.plot(fx, fy, color="#222", lw=2.5, ls="-", alpha=0.8,
+                label="Pareto frontier")
+
+        # Hypervolume
+        hv = hypervolume(gx, gy, ref_x=gx.max(), ref_y=gy.min())
+        ax.text(0.02, 0.02, f"Hypervolume: {hv:.4f}",
+                transform=ax.transAxes, fontsize=10,
+                bbox=dict(boxstyle="round", fc="white", alpha=0.8))
+
     ax.axvline(0.50, color=ORACLE_COLOR, ls=":", lw=1.5, alpha=0.7,
                label="Perfect MIA (0.50)")
     ax.set_xlabel("MIA AUC (← better forgetting)")
     ax.set_ylabel("Retain Accuracy (↑ better)")
-    ax.set_title("Pareto Frontier: Utility vs. Forgetting", fontweight="bold")
+    ax.set_title("Pareto Frontier: Utility vs. Forgetting (with hypervolume)",
+                 fontweight="bold")
     ax.legend(loc="lower right", fontsize=8, ncol=2)
-    plt.colorbar(ax.collections[0], ax=ax, label="Step") if ax.collections else None
+    if ax.collections:
+        plt.colorbar(ax.collections[0], ax=ax, label="Step")
     fig.tight_layout()
     fig.savefig(out_dir / "06_pareto.png", bbox_inches="tight")
     plt.close(fig)
-    logger.info("  Saved: 06_pareto.png")
+    logger.info("  Saved: 06_pareto.png (with frontier + hypervolume)")
 
 
 def plot_heatmap(df, out_dir: Path):
