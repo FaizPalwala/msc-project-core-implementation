@@ -43,6 +43,7 @@ dev = [
 msc-train = "train:main"
 msc-single-shot = "single_shot:main"
 msc-iterative = "iterative:main"
+msc-smoke = "tests.smoke_test:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
