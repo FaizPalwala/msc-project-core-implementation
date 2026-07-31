@@ -15,9 +15,11 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 
 from config_loader import load_method_configs
@@ -195,6 +197,187 @@ def run_single_shot(
     return all_results
 
 
+# ── Multi-seed wrapper ────────────────────────────────────────────────────────
+
+_AGGREGATABLE_KEYS: set[str] = {
+    "mia_mean_auc", "mia_max_auc", "mia_std_auc", "mia_fraction_leaked",
+    "max_conf_auc", "max_confidence_auc", "forget_advantage", "fraction_leaked",
+    "probe_identity_acc", "probe_age_acc", "probe_gender_acc",
+    "retain_id_acc", "retain_age_acc", "test_id_acc", "forget_id_acc",
+    "total_time_s",
+}
+
+
+def run_single_shot_multi_seed(
+    csv_path: str,
+    model_path: str,
+    methods: list[str] | None = None,
+    out_dir: str = "results/single_shot",
+    device_str: str = "auto",
+    base_seed: int = 42,
+    n_seeds: int = 5,
+    scale: float = 1.0,
+    skip_retrain: bool = False,
+) -> dict[str, Any]:
+    """Run single-shot evaluation with multiple seeds, reporting μ ± σ.
+
+    Each seed writes its own results.json + summary.csv into a per-seed
+    subdirectory.  The aggregated results (μ ± σ across seeds per metric
+    per method) are saved at the top level.
+    """
+    import csv
+
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    all_seed_results: list[dict[str, Any]] = []
+
+    for si in range(n_seeds):
+        seed = base_seed + si
+        seed_dir = out_path / f"seed_{seed}"
+        seed_dir.mkdir(parents=True, exist_ok=True)
+
+        print(f"\n{'#'*70}")
+        print(f"  SEED {si+1}/{n_seeds}  (seed={seed})")
+        print(f"{'#'*70}")
+
+        result = run_single_shot(
+            csv_path=csv_path,
+            model_path=model_path,
+            methods=methods,
+            out_dir=str(seed_dir),
+            device_str=device_str,
+            seed=seed,
+            scale=scale,
+            skip_retrain=skip_retrain,
+        )
+        all_seed_results.append(result)
+
+    # ── Aggregate across seeds ────────────────────────────────────────────
+    aggregated: dict[str, dict[str, Any]] = {}
+    method_names = sorted(all_seed_results[0].keys())
+
+    # Collect per-method metric values across seeds
+    collector: dict[str, dict[str, list[float]]] = defaultdict(
+        lambda: defaultdict(list),
+    )
+
+    for seed_result in all_seed_results:
+        for method, data in seed_result.items():
+            if "error" in data:
+                continue
+            flat = _flatten_metrics(data)
+            for key, value in flat.items():
+                if key in _AGGREGATABLE_KEYS and isinstance(value, (int, float)):
+                    collector[method][key].append(float(value))
+
+    for method in method_names:
+        if method not in collector:
+            aggregated[method] = {
+                "method": METHOD_DISPLAY.get(method, method), "error": "no valid seeds",
+            }
+            continue
+        agg: dict[str, Any] = {"method": METHOD_DISPLAY.get(method, method)}
+        for key, values in collector[method].items():
+            arr = np.array(values)
+            agg[key] = round(float(arr.mean()), 4)
+            agg[f"{key}_std"] = round(float(arr.std()), 4)
+        aggregated[method] = agg
+
+    # ── Save aggregated ───────────────────────────────────────────────────
+    agg_path = out_path / "single_shot_aggregated.json"
+    with open(agg_path, "w") as f:
+        json.dump(aggregated, f, indent=2)
+    print(f"\n[OK] Aggregated results (μ ± σ over {n_seeds} seeds) → {agg_path}")
+
+    # ── Print aggregated table ────────────────────────────────────────────
+    _print_aggregated_table(aggregated, n_seeds)
+
+    # ── Save aggregated CSV ───────────────────────────────────────────────
+    rows = []
+    fieldnames = set()
+    for method, agg in aggregated.items():
+        row = {"method": agg.get("method", method)}
+        for k, v in agg.items():
+            if k == "method":
+                continue
+            row[k] = v
+            fieldnames.add(k)
+        rows.append(row)
+    fieldnames = ["method"] + sorted(f for f in fieldnames if not f.endswith("_std")) + \
+                 sorted(f for f in fieldnames if f.endswith("_std"))
+
+    agg_csv = out_path / "single_shot_aggregated.csv"
+    with open(agg_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        # fill missing
+        for row in rows:
+            for fn in fieldnames:
+                row.setdefault(fn, "")
+        writer.writerows(rows)
+    print(f"[OK] Aggregated CSV → {agg_csv}")
+
+    return {"per_seed": all_seed_results, "aggregated": aggregated}
+
+
+def _flatten_metrics(data: dict) -> dict[str, Any]:
+    """Flatten nested evaluation dict into flat key-value pairs for aggregation."""
+    flat: dict[str, Any] = {}
+    ev = data.get("evaluation", {})
+    per_id = data.get("per_identity_mia", {})
+    max_c = data.get("max_confidence_attack", {})
+    probes = data.get("probes", {})
+
+    flat["retain_id_acc"] = ev.get("retain", {}).get("identity", {}).get("accuracy")
+    flat["retain_age_acc"] = ev.get("retain", {}).get("age", {}).get("accuracy")
+    flat["test_id_acc"] = ev.get("test", {}).get("identity", {}).get("accuracy")
+    flat["forget_id_acc"] = ev.get("forget", {}).get("identity", {}).get("accuracy")
+    flat["mia_mean_auc"] = per_id.get("mean_auc")
+    flat["mia_std_auc"] = per_id.get("std_auc")
+    flat["mia_max_auc"] = per_id.get("max_auc")
+    flat["mia_fraction_leaked"] = per_id.get("fraction_leaked")
+    flat["max_conf_auc"] = max_c.get("max_confidence_auc")
+    flat["probe_identity_acc"] = probes.get("identity", {}).get("accuracy")
+    flat["probe_age_acc"] = probes.get("age", {}).get("accuracy")
+    flat["probe_gender_acc"] = probes.get("gender", {}).get("accuracy") if probes.get("gender") else None
+    flat["total_time_s"] = data.get("total_time_s")
+    return {k: v for k, v in flat.items() if v is not None}
+
+
+def _print_aggregated_table(aggregated: dict, n_seeds: int) -> None:
+    """Print μ ± σ table across seeds."""
+    header = (
+        f"\n{'Method':<16} {'IdAcc-R':>14} {'MIA-AUC(μ±σ)':>18} "
+        f"{'MaxAUC':>9} {'Probe-Id':>9} {'Time':>8}"
+    )
+    print(f"\n{'='*85}")
+    print(f"  AGGREGATED RESULTS (μ ± σ over {n_seeds} seeds)")
+    print(f"{'='*85}")
+    print(header)
+    print("─" * 85)
+
+    for method, agg in aggregated.items():
+        if "error" in agg:
+            print(f"{agg['method']:<16}  ERROR: {agg['error']}")
+            continue
+        r_acc = agg.get("retain_id_acc", float("nan"))
+        r_std = agg.get("retain_id_acc_std", 0)
+        mia = agg.get("mia_mean_auc", float("nan"))
+        mia_s = agg.get("mia_mean_auc_std", 0)
+        max_a = agg.get("max_conf_auc", float("nan"))
+        probe = agg.get("probe_identity_acc", float("nan"))
+        t = agg.get("total_time_s", 0)
+
+        print(
+            f"{agg['method']:<16} {r_acc:>8.4f}±{r_std:.4f} "
+            f"{mia:>8.4f}±{mia_s:.4f} {max_a:>9.4f} "
+            f"{probe:>9.4f} {t:>8.1f}"
+        )
+
+    print("=" * 85)
+
+
 def _clean_eval(eval_res: dict) -> dict:
     """Strip raw arrays from evaluation results for JSON serialisation."""
     clean = {}
@@ -297,17 +480,31 @@ if __name__ == "__main__":
     parser.add_argument("--methods",      type=str, nargs="*", default=None)
     parser.add_argument("--device",       type=str, default="auto")
     parser.add_argument("--seed",         type=int, default=42)
+    parser.add_argument("--n_seeds",      type=int, default=5)
     parser.add_argument("--scale",        type=float, default=1.0)
     parser.add_argument("--skip_retrain", action="store_true")
     args = parser.parse_args()
 
-    run_single_shot(
-        csv_path=args.csv,
-        model_path=args.model,
-        methods=args.methods or None,
-        out_dir=args.out,
-        device_str=args.device,
-        seed=args.seed,
-        scale=args.scale,
-        skip_retrain=args.skip_retrain,
-    )
+    if args.n_seeds > 1:
+        run_single_shot_multi_seed(
+            csv_path=args.csv,
+            model_path=args.model,
+            methods=args.methods or None,
+            out_dir=args.out,
+            device_str=args.device,
+            base_seed=args.seed,
+            n_seeds=args.n_seeds,
+            scale=args.scale,
+            skip_retrain=args.skip_retrain,
+        )
+    else:
+        run_single_shot(
+            csv_path=args.csv,
+            model_path=args.model,
+            methods=args.methods or None,
+            out_dir=args.out,
+            device_str=args.device,
+            seed=args.seed,
+            scale=args.scale,
+            skip_retrain=args.skip_retrain,
+        )

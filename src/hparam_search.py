@@ -38,10 +38,10 @@ from typing import Any, Dict, List
 import numpy as np
 import torch
 
-from dataset import SFHQDataset, get_val_transform
+from dataset import VirtualIdentityDataset, get_val_transform
 from device_utils import resolve_device
 from evaluate import evaluate_full
-from mia import run_mia_full
+from mia import run_mia_per_identity
 from model import load_model
 
 
@@ -206,7 +206,6 @@ def run_trial(
     original_model,
     csv_path: str,
     device: torch.device,
-    forget_step: int,
     trial_idx: int,
 ) -> dict:
     """Run one hyperparameter trial and return evaluation results."""
@@ -228,36 +227,32 @@ def run_trial(
         model=original_model,
         csv_path=csv_path,
         device=device,
-        forget_step=forget_step,
         **cfg,
     )
     unlearned = result["model"]
-    elapsed   = time.time() - t0
+    elapsed = time.time() - t0
 
-    # Evaluate
-    eval_res = evaluate_full(unlearned, csv_path, device,
-                             forget_step=forget_step, verbose=False)
-    mia_res  = run_mia_full(unlearned, csv_path, device,
-                            forget_step=forget_step,
-                            score_type="confidence", verbose=False)
+    eval_res = evaluate_full(unlearned, csv_path, device, verbose=False)
+    per_id = run_mia_per_identity(unlearned, csv_path, device, head="identity")
 
-    retain_acc = eval_res.get("retain", {}).get("accuracy", 0.0)
-    f_adv      = mia_res.get("forget_advantage", 0.5)
-    score      = uf_score(retain_acc, f_adv, elapsed)
+    retain_acc = eval_res.get("retain", {}).get("identity", {}).get("accuracy", 0.0)
+    f_adv = abs(per_id.get("mean_auc", 0.5) - 0.5)
+    score = uf_score(retain_acc, f_adv, elapsed)
 
     return {
         "trial": trial_idx,
         "method": method_name,
         "config": cfg,
-        "retain_acc":        round(retain_acc, 4),
-        "test_acc":          round(eval_res.get("test",   {}).get("accuracy", 0.0), 4),
-        "forget_acc":        round((eval_res.get(f"forget_step_{forget_step}", {})
-                                    or eval_res.get("forget", {}))
-                                    .get("accuracy", 0.0), 4),
-        "mia_forget_auc":    mia_res.get("forget_test_auc", 0.5),
-        "forget_advantage":  round(f_adv, 4),
-        "unlearning_time_s": round(elapsed, 2),
-        "uf_score":          round(score, 4),
+        "retain_id_acc":      round(retain_acc, 4),
+        "retain_age_acc":     round(eval_res.get("retain", {}).get("age", {}).get("accuracy", 0.0), 4),
+        "test_id_acc":        round(eval_res.get("test", {}).get("identity", {}).get("accuracy", 0.0), 4),
+        "forget_id_acc":      round(eval_res.get("forget", {}).get("identity", {}).get("accuracy", 0.0), 4),
+        "mia_mean_auc":       per_id.get("mean_auc", 0.5),
+        "mia_max_auc":        per_id.get("max_auc", 0.5),
+        "forget_advantage":   round(f_adv, 4),
+        "fraction_leaked":    per_id.get("fraction_leaked", 0.0),
+        "unlearning_time_s":  round(elapsed, 2),
+        "uf_score":           round(score, 4),
     }
 
 
@@ -269,13 +264,12 @@ def run_search(
     method_name: str,
     csv_path: str,
     model_path: str,
-    forget_step: int = 0,
-    search_type: str = "grid",     # "grid" or "random"
+    search_type: str = "grid",
     n_random_trials: int = 30,
     out_dir: str = "../results/hparam",
     device_str: str = "auto",
     seed: int = 42,
-) -> List[dict]:
+) -> list[dict]:
     device = resolve_device(device_str)
     print(f"\n[HPSearch] Method={method_name} | Type={search_type} | Device={device}")
 
@@ -316,7 +310,7 @@ def run_search(
     for i, cfg in enumerate(configs):
         try:
             trial = run_trial(method_name, cfg, original_model,
-                              csv_path, device, forget_step, trial_idx=i+1)
+                              csv_path, device, trial_idx=i+1)
             all_results.append(trial)
             # Write to JSONL incrementally
             with open(out_jsonl, "a") as f:
@@ -343,11 +337,11 @@ def run_search(
         # Print top-5
         sorted_results = sorted(all_results, key=lambda x: x["uf_score"], reverse=True)
         print(f"\n[HPSearch] Top-5 configs by UF score:")
-        print(f"{'Rank':>5} {'UF':>7} {'RetainAcc':>10} {'MIA_AUC':>9} {'Time':>8}")
+        print(f"{'Rank':>5} {'UF':>7} {'RetIdAcc':>10} {'MIA-AUC':>9} {'Time':>8}")
         print("-" * 45)
         for rank, r in enumerate(sorted_results[:5], 1):
-            print(f"{rank:>5} {r['uf_score']:>7.4f} {r['retain_acc']:>10.4f} "
-                  f"{r['mia_forget_auc']:>9.4f} {r['unlearning_time_s']:>8.1f}s")
+            print(f"{rank:>5} {r['uf_score']:>7.4f} {r['retain_id_acc']:>10.4f} "
+                  f"{r['mia_mean_auc']:>9.4f} {r['unlearning_time_s']:>8.1f}s")
         print(f"\n  Best config: {sorted_results[0]['config']}")
         print(f"  Results saved → {out_csv}")
 
@@ -363,7 +357,6 @@ if __name__ == "__main__":
                         choices=["grid", "random"])
     parser.add_argument("--n_random",   type=int, default=30)
     parser.add_argument("--out",        type=str, default="../results/hparam")
-    parser.add_argument("--forget_step",type=int, default=0)
     parser.add_argument("--device",     type=str, default="auto")
     parser.add_argument("--seed",       type=int, default=42)
     args = parser.parse_args()
@@ -372,7 +365,6 @@ if __name__ == "__main__":
         method_name=args.method,
         csv_path=args.csv,
         model_path=args.model,
-        forget_step=args.forget_step,
         search_type=args.search,
         n_random_trials=args.n_random,
         out_dir=args.out,

@@ -386,22 +386,42 @@ if __name__ == "__main__":
                         choices=["cumulative", "fresh"])
     parser.add_argument("--device",            type=str, default="auto")
     parser.add_argument("--seed",              type=int, default=42)
+    parser.add_argument("--n_seeds",           type=int, default=5)
     parser.add_argument("--scale",             type=float, default=1.0)
     parser.add_argument("--checkpoint_every",  type=int, default=5)
     parser.add_argument("--re_emergence",      type=int, nargs="*",
                         default=[5, 10, 15])
     args = parser.parse_args()
 
-    run_all_iterative(
-        csv_path=args.csv,
-        model_path=args.model,
-        methods=args.methods or None,
-        n_steps=args.n_steps,
-        mode=args.mode,
-        out_dir=args.out,
-        device_str=args.device,
-        seed=args.seed,
-        scale=args.scale,
-        checkpoint_every=args.checkpoint_every,
-        re_emergence_checks=args.re_emergence or None,
-    )
+    if args.n_seeds > 1:
+        for si in range(args.n_seeds):
+            seed = args.seed + si
+            seed_dir = f"{args.out}/seed_{seed}"
+            print(f"\n{'#'*70}\n  SEED {si+1}/{args.n_seeds} (seed={seed})\n{'#'*70}")
+            run_all_iterative(
+                csv_path=args.csv,
+                model_path=args.model,
+                methods=args.methods or None,
+                n_steps=args.n_steps,
+                mode=args.mode,
+                out_dir=seed_dir,
+                device_str=args.device,
+                seed=seed,
+                scale=args.scale,
+                checkpoint_every=args.checkpoint_every,
+                re_emergence_checks=args.re_emergence or None,
+            )
+    else:
+        run_all_iterative(
+            csv_path=args.csv,
+            model_path=args.model,
+            methods=args.methods or None,
+            n_steps=args.n_steps,
+            mode=args.mode,
+            out_dir=args.out,
+            device_str=args.device,
+            seed=args.seed,
+            scale=args.scale,
+            checkpoint_every=args.checkpoint_every,
+            re_emergence_checks=args.re_emergence or None,
+        )
