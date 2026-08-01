@@ -95,11 +95,3 @@ src/
 ## License
 
 Code: MIT.  See [LICENSE](LICENSE).
-
-## Acknowledgements
-
-This work was undertaken on the Aire HPC system at the University of Leeds, UK.
-
-Publications (papers, posters, presentations, or similar outputs) that make
-use of this framework — including experiments run on Aire — must include this
-acknowledgment sentence. See README.md → Acknowledgements.
