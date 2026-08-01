@@ -132,6 +132,29 @@ def _load_stability_summary(results_dir: Path) -> pd.DataFrame | None:
     return df
 
 
+def _load_canary(results_dir: Path) -> dict[str, Any] | None:
+    """Load canary verification JSONs: canary/verify_<method>.json.
+
+    Each file is a dict keyed by identity_id → {n_images, mean_feature_norm,
+    feature_similarity_to_clean}.  Returns {method: {id: metrics}} or None.
+    """
+    canary_dir = results_dir / "canary"
+    if not canary_dir.exists():
+        logger.warning(f"[Report] Canary dir not found: {canary_dir}")
+        return None
+    files = sorted(canary_dir.glob("verify_*.json"))
+    if not files:
+        logger.warning(f"[Report] No verify_*.json in {canary_dir}")
+        return None
+    data: dict[str, Any] = {}
+    for path in files:
+        method = path.stem[len("verify_"):]
+        with open(path) as f:
+            data[method] = json.load(f)
+    logger.info(f"[Report] Loaded canary verification: {[p.name for p in files]}")
+    return data
+
+
 # ── Renderers: LaTeX ─────────────────────────────────────────────────────────
 
 
@@ -353,6 +376,41 @@ def _render_iterative_md(df: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
+def _render_canary_md(canary: dict[str, Any]) -> str:
+    """Markdown table: canary feature-similarity per method.
+
+    After unlearning, canary identities' features should no longer encode
+    the canary pattern — feature_similarity_to_clean should be low
+    (toward 0).  Higher = canary pattern persists (unlearning failed).
+    """
+    if not canary:
+        return "_No canary verification results available._\n"
+
+    lines = [
+        "",
+        "| Method | Identity | Images | Feat-norm | Sim-to-clean (↓ better) |",
+        "|--------|----------|--------|-----------|--------------------------|",
+    ]
+    for method, per_id in sorted(canary.items()):
+        if not isinstance(per_id, dict) or not per_id:
+            lines.append(f"| {method} | — | — | — | — |")
+            continue
+        for cid, m in sorted(per_id.items(), key=lambda kv: int(kv[0])):
+            sim = m.get("feature_similarity_to_clean", float("nan"))
+            sim_str = f"{sim:.4f}" if isinstance(sim, (int, float)) else str(sim)
+            norm = m.get("mean_feature_norm", "—")
+            norm_str = f"{norm:.2f}" if isinstance(norm, (int, float)) else str(norm)
+            lines.append(
+                f"| {method} | {cid} | {m.get('n_images', '—')} | "
+                f"{norm_str} | {sim_str} |"
+            )
+    lines.append("")
+    lines.append("_Lower feature-similarity-to-clean = canary pattern removed. "
+                 "Interpretation requires comparison against the pre-unlearning "
+                 "model (retain the `original_model_best.pt` from the canary run)._")
+    return "\n".join(lines)
+
+
 # ── CSV export ───────────────────────────────────────────────────────────────
 
 
@@ -399,6 +457,7 @@ def generate_report(
     single_shot = _load_single_shot(results_path)
     iterative_df = _load_iterative_aggregated(results_path)
     _stability = _load_stability_summary(results_path)
+    canary = _load_canary(results_path)
 
     single_shot_data: dict[str, Any] = single_shot or {}
 
@@ -415,6 +474,10 @@ def generate_report(
     tex_parts.append(_render_iterative_latex(iterative_df))
     md_parts.append("\n# Iterative Results (final step)")
     md_parts.append(_render_iterative_md(iterative_df))
+
+    # Canary (markdown only — verification detail, not a headline table)
+    md_parts.append("\n# Canary Verification (ground-truth deletion proof)")
+    md_parts.append(_render_canary_md(canary or {}))
 
     # Write LaTeX
     tex = "\n\n".join(part for part in tex_parts if part)
