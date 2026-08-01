@@ -1,8 +1,22 @@
 """
 dataset.py — PyTorch Dataset for SFHQ-InstantID facial-identity classification.
 
-Reads dataset.csv (balanced) or dataset_imbalanced.csv, applies configurable
-transforms, and returns (image, identity_label, age_label) for each sample.
+Reads dataset.csv / dataset.parquet (balanced) or dataset_imbalanced.csv /
+dataset_imbalanced.parquet, applies configurable transforms, and returns
+(image, identity_label, age_label) for each sample.
+
+Standardised schema (final, 2026)
+─────────────────────────────────
+Balanced (11 columns): image_path, identity_id, age_group (0-3), age,
+gender (0/1), split (retain/test/forget), forget_step (-1 non-forget),
+forget_variant (-1 non-forget), arcface_similarity, laplacian_variance,
+detection_confidence.
+
+Imbalanced (13 columns): same 11 + popularity_bin (str) +
+images_per_identity (int).
+
+identity_id is the primary key (renamed from clusterid).  File format
+(CSV or Parquet) is auto-detected from the file extension.
 
 Splits
 ──────
@@ -18,9 +32,9 @@ Transforms
   train — 224×224, ImageNet-normalised, with augmentation
   val   — 224×224, ImageNet-normalised, no augmentation
 
-Optional metadata columns (auto-detected from CSV):
-  gender, arcface_similarity, laplacian_variance, popularity_bin,
-  images_per_identity, detection_confidence
+Confound columns (always present in the final schema):
+  gender, arcface_similarity, laplacian_variance, detection_confidence
+Plus, in the imbalanced variant: popularity_bin, images_per_identity
 """
 
 from __future__ import annotations
@@ -104,9 +118,16 @@ class VirtualIdentityDataset(Dataset):
         img_size: int = 224,
     ) -> None:
         csv_path = Path(csv_path)
-        df_full = pd.read_csv(csv_path)
+        # Auto-detect format: .parquet → read_parquet, else read_csv
+        if csv_path.suffix.lower() == ".parquet":
+            df_full = pd.read_parquet(csv_path)
+        else:
+            df_full = pd.read_csv(csv_path)
 
-        # Data root: csv parent's parent (e.g. data/dataset/dataset.csv → data/)
+        # Data root: csv parent's parent (e.g. data/dataset/dataset.csv → data/).
+        # Image paths are resolved relative to either the CSV's own directory
+        # (data/dataset/images/…) or this root (data/images/…) — see __getitem__.
+        self.csv_dir = csv_path.parent
         self.data_dir = csv_path.parent.parent
 
         # ── Split filter ──────────────────────────────────────────────────
@@ -156,9 +177,15 @@ class VirtualIdentityDataset(Dataset):
         row = self.df.iloc[idx]
 
         # ── Resolve image path ────────────────────────────────────────────
+        # Relative paths are tried against the CSV's own directory first
+        # (data/dataset/images/…), then against the data root (data/images/…).
         img_path = Path(row["image_path"])
         if not img_path.is_absolute():
-            img_path = (self.data_dir / img_path).resolve()
+            candidate = (self.csv_dir / img_path).resolve()
+            if candidate.exists():
+                img_path = candidate
+            else:
+                img_path = (self.data_dir / img_path).resolve()
 
         if not img_path.exists():
             raise FileNotFoundError(
@@ -169,7 +196,7 @@ class VirtualIdentityDataset(Dataset):
         if self.transform is not None:
             img = self.transform(img)
 
-        identity_label = int(row["clusterid"])
+        identity_label = int(row["identity_id"])
         age_label      = int(row.get("age_group", -1))
 
         return img, identity_label, age_label
@@ -182,7 +209,7 @@ class VirtualIdentityDataset(Dataset):
 
     def get_identity_labels(self) -> list[int]:
         """Unique identity labels present in this split's subset."""
-        return sorted(self.df["clusterid"].unique().tolist())
+        return sorted(self.df["identity_id"].unique().tolist())
 
     @property
     def meta_columns(self) -> list[str]:
@@ -192,7 +219,7 @@ class VirtualIdentityDataset(Dataset):
     # ── repr ──────────────────────────────────────────────────────────────
 
     def __repr__(self) -> str:
-        n_ids = self.df["clusterid"].nunique()
+        n_ids = self.df["identity_id"].nunique()
         age_dist = self.df["age_group"].value_counts().sort_index().to_dict() \
             if "age_group" in self.df.columns else {}
         age_str = ", ".join(
@@ -216,7 +243,7 @@ SFHQDataset = VirtualIdentityDataset
 def _detect_meta_columns(df: pd.DataFrame) -> list[str]:
     """Return optional demographic/quality columns present in the DataFrame."""
     known = {
-        "gender", "arcface_similarity", "laplacian_variance",
+        "age", "gender", "arcface_similarity", "laplacian_variance",
         "popularity_bin", "images_per_identity", "detection_confidence",
     }
     return sorted(c for c in known if c in df.columns)

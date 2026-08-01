@@ -47,11 +47,16 @@ def _make_synthetic_dataset(tmpdir: str) -> str:
             Image.fromarray(arr).save(fpath)
             rows.append({
                 "image_path": f"images/{fname}",
-                "clusterid": cid,
+                "identity_id": cid,
                 "age_group": cid % 4,
+                "age": 20 + cid * 10,
+                "gender": cid % 2,
                 "split": split,
                 "forget_step": fs,
                 "forget_variant": 0 if fs >= 0 else -1,
+                "arcface_similarity": round(0.5 + img_idx * 0.1, 4),
+                "laplacian_variance": round(50.0 + img_idx * 20.0, 2),
+                "detection_confidence": round(0.90 + img_idx * 0.02, 4),
             })
 
     csv_path = root / "dataset.csv"

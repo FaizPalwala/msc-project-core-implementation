@@ -10,7 +10,7 @@ References:
 
 Probes
 ──────
-  probe_identity()       — logistic regression on clusterid (600-class)
+  probe_identity()       — logistic regression on identity_id (600-class)
   probe_age()            — logistic regression on age_group (4-class)
   probe_gender()         — logistic regression on gender (2-class, if column present)
   probe_all()            — run all probes, return summary dict
@@ -87,7 +87,7 @@ def probe_identity(
     C: float = 1.0,
     max_samples: int | None = None,
 ) -> dict[str, Any]:
-    """Train a LogisticRegression probe to predict identity (clusterid).
+    """Train a LogisticRegression probe to predict identity (identity_id).
 
     Returns accuracy and per-class metrics on the probe's predictions.
     """

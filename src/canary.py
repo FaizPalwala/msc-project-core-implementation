@@ -206,7 +206,7 @@ if __name__ == "__main__":
 
         df = pd.read_csv(args.csv)
         # Tag canaried identities
-        df["has_canary"] = df["clusterid"].apply(
+        df["has_canary"] = df["identity_id"].apply(
             lambda c: int(c in set(args.identities)),
         )
         # Insert canaries into image pixels (requires reading images)

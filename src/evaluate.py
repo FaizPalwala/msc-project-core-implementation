@@ -177,13 +177,13 @@ def evaluate_per_identity(
 ) -> dict[int, dict[str, Any]]:
     """Evaluate each forget identity (forget_variant) separately.
 
-    Returns dict keyed by clusterid → per-head eval summary.
-    Uses the entire forget split, iterating over unique cluster IDs.
+    Returns dict keyed by identity_id → per-head eval summary.
+    Uses the entire forget split, iterating over unique identity IDs.
     """
     ds = VirtualIdentityDataset(csv_path, split="forget", transform=get_val_transform())
     id_to_indices: dict[int, list[int]] = defaultdict(list)
     for i in range(len(ds)):
-        cid = int(ds.df.iloc[i]["clusterid"])
+        cid = int(ds.df.iloc[i]["identity_id"])
         id_to_indices[cid].append(i)
 
     results: dict[int, dict[str, Any]] = {}

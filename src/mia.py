@@ -209,7 +209,7 @@ def run_mia_per_identity(
     score_type: str = "confidence",
     head: str = "identity",
 ) -> dict[str, Any]:
-    """Run MIA separately for each forget identity (clusterid).
+    """Run MIA separately for each forget identity (identity_id).
 
     Returns dict with per-identity AUCs + aggregate statistics.
     """
@@ -225,7 +225,7 @@ def run_mia_per_identity(
     )
     id_to_indices: dict[int, list[int]] = defaultdict(list)
     for i in range(len(forget_ds)):
-        cid = int(forget_ds.df.iloc[i]["clusterid"])
+        cid = int(forget_ds.df.iloc[i]["identity_id"])
         id_to_indices[cid].append(i)
 
     per_id_auc: dict[int, float] = {}
@@ -304,7 +304,7 @@ def run_max_confidence_attack(
     )
     id_to_indices: dict[int, list[int]] = defaultdict(list)
     for i in range(len(forget_ds)):
-        cid = int(forget_ds.df.iloc[i]["clusterid"])
+        cid = int(forget_ds.df.iloc[i]["identity_id"])
         id_to_indices[cid].append(i)
 
     max_per_id: list[float] = []
