@@ -172,6 +172,15 @@ configs/
 - `profile=smoke` → scale=0.1, 1 seed — ~10x shorter, for validation
 - Method HPs loaded via `config_loader.load_method_configs(scale=...)`
 
+## Acknowledgements
+
+This work was undertaken on the Aire HPC system at the University of Leeds, UK.
+
+All experiments (training, unlearning, evaluation) ran on Aire's GPU partition
+(L40S nodes). When publishing research papers, posters, presentations, or
+similar outputs that have made use of the system, the sentence above must be
+included as an acknowledgment of the service.
+
 ## References
 
 ```
