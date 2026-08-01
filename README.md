@@ -36,6 +36,29 @@ ResNet-18 backbone (ImageNet-pretrained, 224×224)
 | Split | 450 retain / 90 test / 60 forget | Same IDs, pruned |
 | Forget protocol | 15 steps × 4 IDs | Same |
 
+### Schema (final, standardised)
+
+Balanced — `dataset.csv` / `dataset.parquet` (11 columns):
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `image_path` | string | relative path (resolved against CSV dir, then data root) |
+| `identity_id` | int | primary key (renamed from `clusterid`) |
+| `age_group` | int (0–3) | age-label for the age head |
+| `age` | int | raw age estimate |
+| `gender` | int (0/1) | confound control / fairness analysis |
+| `split` | string | `retain` / `test` / `forget` |
+| `forget_step` | int | −1 for non-forget rows |
+| `forget_variant` | int | −1 for non-forget rows |
+| `arcface_similarity` | float | within-identity outlier confound control |
+| `laplacian_variance` | float | image-quality confound |
+| `detection_confidence` | float | alignment quality |
+
+Imbalanced — `dataset_imbalanced.csv` / `.parquet`: same 11 + `popularity_bin`
+(string) + `images_per_identity` (int) = 13 columns.
+
+File format (CSV or Parquet) is auto-detected from the extension.
+
 ---
 
 ## Pipeline Stages
