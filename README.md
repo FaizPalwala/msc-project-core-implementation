@@ -36,7 +36,7 @@ ResNet-18 backbone (ImageNet-pretrained, 224×224)
 | Split | 450 retain / 90 test / 60 forget | Same IDs, pruned |
 | Forget protocol | 15 steps × 4 IDs | Same |
 
-### Schema (final, standardised)
+### Schema 
 
 Balanced — `dataset.csv` / `dataset.parquet` (11 columns):
 
@@ -67,7 +67,7 @@ File format (CSV or Parquet) is auto-detected from the extension.
 train → single_shot → hparam_search → iterative → stability
   │         │              │               │           │
   │         └──────────────┴───────────────┘           │
-  │         (parallel after train)                     │
+  │              (parallel after train)                │
   └────────────────────────────────────────────────────┘
 ```
 
@@ -174,12 +174,8 @@ configs/
 
 ## Acknowledgements
 
-This work was undertaken on the Aire HPC system at the University of Leeds, UK.
-
-All experiments (training, unlearning, evaluation) ran on Aire's GPU partition
-(L40S nodes). When publishing research papers, posters, presentations, or
-similar outputs that have made use of the system, the sentence above must be
-included as an acknowledgment of the service.
+This work was originally undertaken on the Aire HPC system at the University of Leeds, UK.
+All experiments (training, unlearning, evaluation) ran on Aire's GPU partition (L40S nodes). 
 
 ## References
 
