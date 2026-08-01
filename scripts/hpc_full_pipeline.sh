@@ -85,7 +85,33 @@ STAB_JOB=$(sbatch --parsable \
     "$OUT/iterative/plots")
 echo "  Stability job: $STAB_JOB"
 
+# ── Stage 5: Canary experiment (independent of train — uses its own
+#    canary-tagged dataset and training run) ─────────────────────────────
+echo "[$(date)] Submitting canary experiment (independent)…"
+CANARY_JOB=$(sbatch --parsable \
+    --job-name=unlearn_canary \
+    --time=12:00:00 --partition=gpu --gres=gpu:1 \
+    --cpus-per-task=8 --mem=32G \
+    --output="$LOG_DIR/canary_%j.out" \
+    --error="$LOG_DIR/canary_%j.err" \
+    "$PROJECT_DIR/scripts/slurm_canary.sh" \
+    "$CSV" "$OUT/canary")
+echo "  Canary job: $CANARY_JOB"
+
+# ── Stage 6: Report (after stability + canary) ──────────────────────────
+echo "[$(date)] Submitting report (dependency: $STAB_JOB:$CANARY_JOB)…"
+REPORT_JOB=$(sbatch --parsable \
+    --job-name=unlearn_report \
+    --dependency=afterok:$STAB_JOB:$CANARY_JOB \
+    --time=1:00:00 --partition=gpu --gres=gpu:0 \
+    --cpus-per-task=2 --mem=8G \
+    --output="$LOG_DIR/report_%j.out" \
+    --error="$LOG_DIR/report_%j.err" \
+    "$PROJECT_DIR/scripts/slurm_report.sh" \
+    "$OUT")
+echo "  Report job: $REPORT_JOB"
+
 echo ""
 echo "[$(date)] Pipeline submitted."
 echo "  Monitor: squeue -u \$USER"
-echo "  Job IDs: train=$TRAIN_JOB single=$SINGLE_JOB hp=$HP_JOB iter=$ITER_JOB stab=$STAB_JOB"
+echo "  Job IDs: train=$TRAIN_JOB single=$SINGLE_JOB hp=$HP_JOB iter=$ITER_JOB stab=$STAB_JOB canary=$CANARY_JOB report=$REPORT_JOB"
