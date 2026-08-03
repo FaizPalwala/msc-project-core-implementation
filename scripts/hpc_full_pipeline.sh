@@ -81,7 +81,7 @@ STAB_JOB=$(sbatch --parsable \
     --output="$LOG_DIR/stab_%j.out" \
     --error="$LOG_DIR/stab_%j.err" \
     "$PROJECT_DIR/scripts/slurm_stability.sh" \
-    "$OUT/iterative/iterative_combined.csv" \
+    "$OUT/iterative/iterative_combined_aggregated.csv" \
     "$OUT/iterative/plots")
 echo "  Stability job: $STAB_JOB"
 
