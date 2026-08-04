@@ -26,35 +26,43 @@ pip install -e .
 ## Storage Layout
 
 ```
-/nobackup/<username>/unlearning_project/
-├── data/
-│   ├── dataset/                      ← SFHQ-InstantID CSVs + images
-│   │   ├── dataset.csv               ← balanced (600 IDs, 75 imgs/ID)
-│   │   ├── dataset_imbalanced.csv    ← 85:40:20 gradient
-│   │   └── images/                   ← 128×128 aligned face crops
-│   └── ...
-├── results/
-│   ├── checkpoints/                  ← trained models (.pt)
-│   ├── single_shot/                  ← single-shot evaluation output
-│   ├── iterative/                    ← iterative protocol output
-│   ├── hparam/                       ← HP search trials
-│   └── ablation/                     ← ablation study results
-└── logs/                             ← Slurm .out/.err files
+/mnt/scratch/<username>/core/
+├── code/                          ← repo (this project)
+│   ├── configs/methods/           ← per-method hyperparameters
+│   ├── scripts/                   ← Slurm wrappers + pipeline launcher
+│   └── results/                   ← all run outputs (gitignored)
+│       ├── checkpoints/           ← trained models (.pt)
+│       ├── single_shot/           ← single-shot evaluation output
+│       ├── iterative/             ← iterative protocol output
+│       ├── hparam/                ← HP search trials
+│       ├── canary/                ← canary verification results
+│       └── report/                ← LaTeX/Markdown reports
+└── bench/                         ← benchmark release (sister of code/)
+    ├── metadata/
+    │   ├── dataset.csv            ← balanced (600 IDs, 75 imgs/ID)
+    │   ├── dataset_imbalanced.csv ← 85:40:20 gradient
+    │   └── datasetsummary.json
+    └── images/                    ← 224×224 aligned face crops
 ```
+
+All scripts resolve paths relative to the repo (`PROJECT_DIR`), so the
+`core/` parent may live anywhere on scratch — the data dir is always
+`$(dirname $PROJECT_DIR)/bench`.
 
 ## Pipeline Stages
 
 ```
-train ──→ single_shot ──→ iterative ──→ stability
-  │            │               │              │
-  └────────────┴───────────────┘              │
-    (single-shot + HP search                  │
-     run in parallel after train)             │
-                                              │
-                         ┌────────────────────┘
-                         ▼
-                   13 publication-quality PNGs
+train ──→ single_shot ──→ iterative ──→ stability ──┐
+  │            │                                     │
+  │            └──→ hparam (parallel) ──→ iterative  │
+  │                                                  │
+  └───────────→ canary (independent) ────────────────┴──→ report
 ```
+
+- single-shot + HP search run in parallel after train
+- iterative needs both (best HP configs + single-shot baseline)
+- stability plots after iterative; canary runs independently
+- report (LaTeX/Markdown) after stability + canary both finish
 
 ## Job Submission
 
@@ -103,26 +111,41 @@ JOB_ITER=$(sbatch --parsable \
     scripts/slurm_iterative.sh)
 
 # 4. Stability plots (~1 hr, CPU-only after iterative)
-sbatch --dependency=afterok:$JOB_ITER \
+JOB_STAB=$(sbatch --parsable \
+    --dependency=afterok:$JOB_ITER \
     --job-name=unlearn_stab \
     --time=2:00:00 --partition=gpu --gres=gpu:1 \
     --cpus-per-task=4 --mem=16G \
-    scripts/slurm_stability.sh
+    scripts/slurm_stability.sh)
+
+# 5. Canary verification (independent of train; runs anytime after model exists)
+JOB_CANARY=$(sbatch --parsable \
+    --job-name=unlearn_canary \
+    --time=4:00:00 --partition=gpu --gres=gpu:1 \
+    --cpus-per-task=4 --mem=16G \
+    scripts/slurm_canary.sh)
+
+# 6. Report generation (after stability + canary both done)
+sbatch --dependency=afterok:$JOB_STAB:$JOB_CANARY \
+    --job-name=unlearn_report \
+    --time=1:00:00 --partition=cpu --cpus-per-task=4 --mem=8G \
+    scripts/slurm_report.sh
 ```
 
 ### Smoke Testing (Before Full Run)
 
 ```bash
+# Run from the repo root (code/); bench sits as its sibling (../bench).
 # Single-shot, scaled 10× down, 1 seed, 2 methods, ~15 min
 python src/single_shot.py \
-    --csv data/dataset/dataset.csv \
+    --csv ../bench/metadata/dataset.csv \
     --model results/checkpoints/original_model_best.pt \
     --scale 0.1 --n_seeds 1 --skip_retrain \
     --methods ga adaptiformet
 
 # Iterative, 3 steps, smoke scale, ~30 min
 python src/iterative.py \
-    --csv data/dataset/dataset.csv \
+    --csv ../bench/metadata/dataset.csv \
     --model results/checkpoints/original_model_best.pt \
     --n_steps 3 --scale 0.1 --n_seeds 1 \
     --methods adaptiformet
@@ -133,13 +156,13 @@ python src/iterative.py \
 ```bash
 # Single-shot with 5 seeds → μ ± σ in aggregated table
 python src/single_shot.py \
-    --csv data/dataset/dataset.csv \
+    --csv ../bench/metadata/dataset.csv \
     --model results/checkpoints/original_model_best.pt \
     --n_seeds 5 --seed 42
 
 # Iterative with 5 seeds → independent seed_N/ subdirectories
 python src/iterative.py \
-    --csv data/dataset/dataset.csv \
+    --csv ../bench/metadata/dataset.csv \
     --model results/checkpoints/original_model_best.pt \
     --n_seeds 5 --seed 42
 ```
@@ -191,7 +214,7 @@ train ──────────────┤                        ├�
 
 - **Partition**: `gpu` (28 nodes × 3 L40S GPUs, 168 cores each)
 - **Flash storage**: `$TMP_SHARED` (1 TB/job, auto-purged). Stage datasets there for I/O-heavy phases.
-- **Lustre scratch**: `/scratch/$USER/` — large capacity, slower I/O. Store persistent results here.
-- **Home**: `$HOME` — small quota, versioned backups. Store code and small configs only.
+- **Lustre scratch**: `/mnt/scratch/$USER/` — large capacity, slower I/O. The `core/` project tree (code + bench + results) lives here.
+- **Home**: `$HOME` — small quota, versioned backups. Keep only dotfiles and small configs; the repo lives on scratch (code is backed up via git remote; results are regenerable).
 - **Max wall time**: 72 hr on gpu partition.
 - **Interactive**: `srun --partition=gpu --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=4:00:00 --pty bash`

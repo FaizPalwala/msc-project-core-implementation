@@ -64,11 +64,11 @@ File format (CSV or Parquet) is auto-detected from the extension.
 ## Pipeline Stages
 
 ```
-train → single_shot → hparam_search → iterative → stability
-  │         │              │               │           │
-  │         └──────────────┴───────────────┘           │
-  │              (parallel after train)                │
-  └────────────────────────────────────────────────────┘
+train → single_shot → iterative → stability ──┐
+  │          │                                 │
+  │          └→ hparam (parallel) → iterative  │
+  │                                            │
+  └──→ canary (independent) ───────────────────┴──→ report
 ```
 
 | Stage | Script | Description | Parallel? |
@@ -78,6 +78,8 @@ train → single_shot → hparam_search → iterative → stability
 | HP search | `hparam_search.py` | Grid/random search, UF-score ranking | Parallel with single-shot |
 | Iterative | `iterative.py` | 15 step × 4 ID, cumulative + fresh, re-emergence | After best configs |
 | Stability | `stability.py` | 13 publication-quality plots | After iterative |
+| Canary | `canary.py` | Pixel-level ground-truth deletion proof | Independent |
+| Report | `report.py` | LaTeX/Markdown synthesis of all results | After stability + canary |
 
 ## Quick Start
 
@@ -86,24 +88,24 @@ train → single_shot → hparam_search → iterative → stability
 pip install -e .
 
 # Train original model
-python src/train.py --csv data/dataset/dataset.csv --save_dir results/checkpoints
+python src/train.py --csv ../bench/metadata/dataset.csv --save_dir results/checkpoints
 
 # Single-shot evaluation (smoke test)
-python src/single_shot.py --csv data/dataset/dataset.csv \\
-    --model results/checkpoints/original_model_best.pt \\
+python src/single_shot.py --csv ../bench/metadata/dataset.csv \
+    --model results/checkpoints/original_model_best.pt \
     --scale 0.1 --skip_retrain --methods ga ft ng_plus
 
 # Full single-shot
-python src/single_shot.py --csv data/dataset/dataset.csv \\
+python src/single_shot.py --csv ../bench/metadata/dataset.csv \
     --model results/checkpoints/original_model_best.pt
 
 # Iterative protocol (15 steps)
-python src/iterative.py --csv data/dataset/dataset.csv \\
-    --model results/checkpoints/original_model_best.pt \\
+python src/iterative.py --csv ../bench/metadata/dataset.csv \
+    --model results/checkpoints/original_model_best.pt \
     --methods ng_plus msg_kd adaptiformet
 
 # Stability plots
-python src/stability.py --combined results/iterative/iterative_combined.csv
+python src/stability.py --combined results/iterative/iterative_combined_aggregated.csv
 ```
 
 ## Methods

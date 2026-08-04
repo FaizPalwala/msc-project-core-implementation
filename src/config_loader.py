@@ -5,9 +5,10 @@ Loads per-method YAML files from configs/methods/ and returns them as
 nested dicts.  Replaces the duplicated DEFAULT_CONFIGS / DEFAULT_ITER_CONFIGS
 dicts previously scattered across comprehensive_eval.py and iterative_unlearning.py.
 
-Also provides smoke-test scaling: when profile.scale < 1.0, all step/epoch
+Also provides smoke-test scaling: when scale < 1.0, all step/epoch
 counts are multiplied by the scale factor (floored to min 1), while learning
-rates and fractions are left unchanged.
+rates and fractions are left unchanged. Scale is an explicit CLI flag
+(--scale) on each stage script.
 """
 
 from __future__ import annotations
