@@ -16,7 +16,7 @@
 module purge
 module load miniforge
 module load cuda/12.6.2
-conda activate data_gen
+conda activate core
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DATA_DIR="$(dirname "$PROJECT_DIR")/bench"       # bench is a sister of the repo

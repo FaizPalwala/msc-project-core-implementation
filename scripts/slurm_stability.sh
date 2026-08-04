@@ -7,7 +7,7 @@
 
 module purge
 module load miniforge
-conda activate data_gen
+conda activate core
 export MPLBACKEND=Agg
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"

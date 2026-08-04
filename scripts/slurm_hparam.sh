@@ -8,7 +8,7 @@
 module purge
 module load miniforge
 module load cuda/12.6.2
-conda activate data_gen
+conda activate core
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"

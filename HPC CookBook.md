@@ -9,8 +9,8 @@ module load miniforge
 module load cuda/12.6.2
 
 # 2. Create and activate the environment
-conda create -n data_gen python=3.10 -y
-conda activate data_gen
+conda create -n core python=3.10 -y
+conda activate core
 
 # 3. Install PyTorch for CUDA 12.4
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124

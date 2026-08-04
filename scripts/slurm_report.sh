@@ -11,7 +11,7 @@
 
 module purge
 module load miniforge
-conda activate data_gen
+conda activate core
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RESULTS="${1:-$PROJECT_DIR/results}"
