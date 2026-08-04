@@ -12,9 +12,10 @@ conda activate data_gen
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-CSV="${1:-$SCRATCH/unlearning_project/data/dataset/dataset.csv}"
-MODEL="${2:-$SCRATCH/unlearning_project/results/checkpoints/original_model_best.pt}"
-OUT="${3:-$SCRATCH/unlearning_project/results/iterative}"
+DATA_DIR="$(dirname "$PROJECT_DIR")/bench"       # bench is a sister of the repo
+CSV="${1:-$DATA_DIR/metadata/dataset.csv}"
+MODEL="${2:-$PROJECT_DIR/results/checkpoints/original_model_best.pt}"
+OUT="${3:-$PROJECT_DIR/results/iterative}"
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Iterative protocol → $OUT"

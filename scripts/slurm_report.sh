@@ -14,7 +14,7 @@ module load miniforge
 conda activate data_gen
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RESULTS="${1:-$SCRATCH/unlearning_project/results}"
+RESULTS="${1:-$PROJECT_DIR/results}"
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Generating report from $RESULTS"

@@ -11,8 +11,8 @@ conda activate data_gen
 export MPLBACKEND=Agg
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-COMBINED="${1:-$SCRATCH/unlearning_project/results/iterative/iterative_combined.csv}"
-OUT="${2:-$SCRATCH/unlearning_project/results/iterative/plots}"
+COMBINED="${1:-$PROJECT_DIR/results/iterative/iterative_combined_aggregated.csv}"
+OUT="${2:-$PROJECT_DIR/results/iterative/plots}"
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Stability plots → $OUT"

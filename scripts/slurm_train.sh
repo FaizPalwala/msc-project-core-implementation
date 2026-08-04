@@ -12,8 +12,9 @@ module load cuda/12.6.2
 conda activate data_gen
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-CSV="${1:-$SCRATCH/unlearning_project/data/dataset/dataset.csv}"
-SAVE_DIR="${2:-$SCRATCH/unlearning_project/results/checkpoints}"
+DATA_DIR="$(dirname "$PROJECT_DIR")/bench"       # bench is a sister of the repo
+CSV="${1:-$DATA_DIR/metadata/dataset.csv}"
+SAVE_DIR="${2:-$PROJECT_DIR/results/checkpoints}"
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Training on $CSV → $SAVE_DIR"

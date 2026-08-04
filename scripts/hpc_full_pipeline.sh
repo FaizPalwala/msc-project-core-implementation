@@ -16,9 +16,10 @@ LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 
 # ── Config ──────────────────────────────────────────────────────────────
-CSV="$SCRATCH/unlearning_project/data/dataset/dataset.csv"
-MODEL="$SCRATCH/unlearning_project/results/checkpoints/original_model_best.pt"
-OUT="$SCRATCH/unlearning_project/results"
+DATA_DIR="$(dirname "$PROJECT_DIR")/bench"       # bench is a sister of the repo
+CSV="$DATA_DIR/metadata/dataset.csv"
+MODEL="$PROJECT_DIR/results/checkpoints/original_model_best.pt"
+OUT="$PROJECT_DIR/results"
 
 # ── Stage 1: Train ──────────────────────────────────────────────────────
 echo "[$(date)] Submitting train job…"
