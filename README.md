@@ -82,8 +82,8 @@ train → single_shot → hparam_search → iterative → stability
 ## Quick Start
 
 ```bash
-# Install dependencies
-pip install torch torchvision pandas numpy scikit-learn matplotlib pyyaml hydra-core
+# Install dependencies (on Aire: install torch cu124 wheels first, see HPC CookBook)
+pip install -e .
 
 # Train original model
 python src/train.py --csv data/dataset/dataset.csv --save_dir results/checkpoints
@@ -163,14 +163,12 @@ Five-tier evaluation referenced to:
 
 ```
 configs/
-  config.yaml              → selects profile + dataset
-  profile/{full,smoke,debug}.yaml  → scale factor + seeds
   methods/*.yaml           → per-method hyperparameters (single source of truth)
 ```
 
-- `profile=full` → scale=1.0, 5 seeds — full HPC run
-- `profile=smoke` → scale=0.1, 1 seed — ~10x shorter, for validation
 - Method HPs loaded via `config_loader.load_method_configs(scale=...)`
+- Run-scale knobs (`--scale`, `--seed`, `--n_seeds`) are explicit CLI flags on
+  each stage script — see the Slurm templates for the canonical full-scale values.
 
 ## Acknowledgements
 

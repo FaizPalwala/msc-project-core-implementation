@@ -68,8 +68,6 @@ welcome in the following areas.
 
 ```
 configs/
-  config.yaml              ← top-level config
-  profile/                 ← scale factors (full, smoke, debug)
   methods/                 ← per-method hyperparameters (single source of truth)
 scripts/
   slurm_*.sh               ← per-stage Slurm templates
