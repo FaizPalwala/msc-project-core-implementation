@@ -116,7 +116,7 @@ def probe_identity(
     y_test  = id_labels[test_idx]
 
     clf = LogisticRegression(
-        C=C, max_iter=500, multi_class="multinomial",
+        C=C, max_iter=500,
         solver="lbfgs", random_state=42,
     )
     clf.fit(X_train, y_train)
