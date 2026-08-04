@@ -36,8 +36,12 @@ def _make_synthetic_dataset(tmpdir: str) -> str:
     rows = []
     rng = np.random.RandomState(42)
 
-    for cid in range(4):  # 4 identities
-        split = "retain" if cid < 2 else "forget" if cid == 2 else "test"
+    for cid in range(6):  # 6 identities: 2 per split (retain/forget/test)
+        # 2 identities per split guarantees every probe sees >= 2 classes:
+        # the probe 80/20-splits each split's samples, and with 3 imgs per
+        # identity at least one image of each identity stays in the train
+        # fold (test fold holds at most 2 of 6 samples).
+        split = "retain" if cid < 2 else "forget" if cid < 4 else "test"
         fs = cid - 2 if split == "forget" else -1
         for img_idx in range(3):  # 3 images per identity
             fname = f"identity_{cid:03d}_img_{img_idx:02d}.jpg"
