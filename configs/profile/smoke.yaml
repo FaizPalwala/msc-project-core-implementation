@@ -1,7 +1,0 @@
-# Smoke-test profile — scaled-down for quick validation.
-# All step/epoch counts are multiplied by scale (floored to min 1).
-# LR, fractions, and boolean flags are unchanged.
-scale: 0.1
-seed: 42
-n_seeds: 1
-device: auto

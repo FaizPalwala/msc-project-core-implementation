@@ -12,16 +12,14 @@ module load cuda/12.6.2
 conda create -n core python=3.10 -y
 conda activate core
 
-# 3. Install PyTorch for CUDA 12.4
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+# 3. Install PyTorch for CUDA 12.4 (must precede -e . so pip doesn't
+#    resolve torch>=2.0 from PyPI and pull the CPU build)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 
-# 4. Install xformers
-pip install xformers --index-url https://download.pytorch.org/whl/cu124
+# 4. Remaining deps + console scripts from pyproject.toml (single source of truth)
+pip install -e .
 
-# 5. Project dependencies
-pip install pandas numpy scikit-learn matplotlib pyyaml hydra-core
-
-# 6. cuDNN (PyTorch ships its own — no extra install needed for ResNet-18 training)
+# 5. cuDNN: PyTorch ships its own — no extra install needed for ResNet-18 training
 
 ```
 

@@ -1,5 +1,0 @@
-# Full-scale profile — all step/epoch counts at their default values.
-scale: 1.0
-seed: 42
-n_seeds: 5           # run 5 independent seeds, report μ ± σ
-device: auto
