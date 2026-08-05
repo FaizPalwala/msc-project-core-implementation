@@ -50,6 +50,6 @@ python src/train.py \
     --subset train \
     --save_dir "$SAVE_DIR" \
     --epochs 30 --lr 1e-3 --batch_size 64 \
-    --age_weight 0.5 --seed 42
+    --age_weight 0.5 --seed 42 2>&1
 
 echo "[$(date)] Train complete."

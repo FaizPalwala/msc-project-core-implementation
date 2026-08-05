@@ -52,6 +52,6 @@ python src/iterative.py \
     --n_steps 15 --mode cumulative \
     --seed 42 --scale 1.0 \
     --subset holdout \
-    --re_emergence 5 10 15
+    --re_emergence 5 10 15 2>&1
 
 echo "[$(date)] Iterative complete."

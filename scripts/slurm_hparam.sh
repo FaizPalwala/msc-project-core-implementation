@@ -49,6 +49,6 @@ bash "$PROJECT_DIR/scripts/gpu_preflight.sh" || exit 1
 
 python src/hparam_search.py \
     --csv "$CSV" --model "$MODEL" --out "$OUT" \
-    --method ng_plus --search grid --seed 42
+    --method ng_plus --search grid --seed 42 2>&1
 
 echo "[$(date)] HP search complete."

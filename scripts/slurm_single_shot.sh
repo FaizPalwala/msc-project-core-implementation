@@ -49,6 +49,6 @@ bash "$PROJECT_DIR/scripts/gpu_preflight.sh" || exit 1
 
 python src/single_shot.py \
     --csv "$CSV" --model "$MODEL" --out "$OUT" \
-    --seed 42 --scale 1.0
+    --seed 42 --scale 1.0 2>&1
 
 echo "[$(date)] Single-shot complete."

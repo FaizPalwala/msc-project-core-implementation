@@ -39,6 +39,6 @@ OUT="${2:-$PROJECT_DIR/results/iterative/plots}"
 cd "$PROJECT_DIR"
 echo "[$(date)] Stability plots → $OUT"
 
-python src/stability.py --combined "$COMBINED" --out "$OUT"
+python src/stability.py --combined "$COMBINED" --out "$OUT" 2>&1
 
 echo "[$(date)] Stability plots complete."

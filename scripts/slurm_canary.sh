@@ -68,7 +68,7 @@ echo "[$(date)] Inserting canaries…"
 python src/canary.py insert \
     --csv "$CSV" \
     --identities "${IDENTITIES[@]}" \
-    --out "$CANARY_CSV"
+    --out "$CANARY_CSV" 2>&1
 
 # ── Stage 2: Train on canary-tagged dataset ─────────────────────────────
 echo "[$(date)] Training on canary dataset…"
@@ -77,7 +77,7 @@ python src/train.py \
     --csv "$CANARY_CSV" \
     --save_dir "$CKPT_DIR" \
     --epochs 30 --lr 1e-3 --batch_size 64 \
-    --age_weight 0.5 --seed 42
+    --age_weight 0.5 --seed 42 2>&1
 
 CANARY_MODEL="$CKPT_DIR/original_model_best.pt"
 
@@ -88,7 +88,7 @@ python src/single_shot.py \
     --model "$CANARY_MODEL" \
     --out "$UNLEARN_DIR" \
     --methods ga adaptiformet \
-    --skip_retrain
+    --skip_retrain 2>&1
 
 # ── Stage 4: Verify canary removal on the unlearned models ──────────────
 echo "[$(date)] Verifying canary unlearning…"
@@ -100,7 +100,7 @@ for method in ga adaptiformet; do
             --csv "$CANARY_CSV" \
             --model "$MODEL" \
             --identities "${IDENTITIES[@]}" \
-            | tee "$OUT/verify_${method}.json"
+            2>&1 | tee "$OUT/verify_${method}.json"
     else
         echo "  [WARN] $MODEL not found — skipping verify for $method"
     fi

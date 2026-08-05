@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +53,8 @@ from sklearn.linear_model import LogisticRegression
 
 from model import load_model
 from device_utils import resolve_device
+
+logger = logging.getLogger(__name__)
 
 # ── Canary pattern generator ──────────────────────────────────────────────────
 
@@ -183,6 +186,11 @@ def verify_canary_unlearning(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command")
 
@@ -225,4 +233,7 @@ if __name__ == "__main__":
         results = verify_canary_unlearning(
             model, args.csv, device, args.identities,
         )
-        logger.info(json.dumps(results, indent=2))
+        # Data output → stdout so `| tee file.json` captures raw JSON;
+        # human-readable confirmation → logger (stderr).
+        print(json.dumps(results, indent=2))
+        logger.info(f"[OK] Canary verification complete for {len(results)} identities")

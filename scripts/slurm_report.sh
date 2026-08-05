@@ -43,6 +43,6 @@ echo "[$(date)] Generating report from $RESULTS"
 
 python src/report.py \
     --results "$RESULTS" \
-    --out "$RESULTS/report"
+    --out "$RESULTS/report" 2>&1
 
 echo "[$(date)] Report complete: $RESULTS/report/"
