@@ -208,9 +208,11 @@ def evaluate_per_demographic(
     csv_path: str,
     device: torch.device,
     batch_size: int = 128,
+    subset: str = "all",
 ) -> dict[str, dict[str, Any]]:
     """Evaluate forget split stratified by age-group and popularity bin."""
-    ds = VirtualIdentityDataset(csv_path, split="forget", transform=get_val_transform())
+    ds = VirtualIdentityDataset(csv_path, split="forget", transform=get_val_transform(),
+                                subset=subset)
     results: dict[str, dict[str, Any]] = {}
 
     # By age group

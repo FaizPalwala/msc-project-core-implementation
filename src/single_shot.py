@@ -164,6 +164,12 @@ def run_single_shot(
                 subset="holdout",
             )
 
+            # ── Demographic evaluation (accuracy by age/popularity bin) ───
+            demog_eval = evaluate_per_demographic(
+                unlearned_model, csv_path, device,
+                subset="holdout",
+            )
+
             # ── Tier 2: Representation probing ────────────────────────────
             probes_forget = probe_all(
                 unlearned_model, csv_path, device, split="forget",
@@ -191,6 +197,7 @@ def run_single_shot(
                                      if not isinstance(v, dict)},
                 "max_confidence_attack": max_conf,
                 "demographic_mia": demog_mia,
+                "demographic_eval": demog_eval,
                 "probes": probes_forget,
                 "forgetting": forgetting_metrics,
                 "total_time_s": round(total_time, 2),
@@ -369,6 +376,20 @@ def _flatten_metrics(data: dict) -> dict[str, Any]:
     flat["probe_age_acc"] = probes.get("age", {}).get("accuracy")
     flat["probe_gender_acc"] = probes.get("gender", {}).get("accuracy") if probes.get("gender") else None
     flat["total_time_s"] = data.get("total_time_s")
+
+    # ── Per-demographic-bin metrics (populated only for imbalanced dataset) ──
+    demog_mia = data.get("demographic_mia", {})
+    demog_eval = data.get("demographic_eval", {})
+    for bin_name in ("high", "medium", "low"):
+        # MIA AUC by popularity bin
+        key_mia = f"popularity_{bin_name}"
+        if key_mia in demog_mia and isinstance(demog_mia[key_mia], dict):
+            flat[f"mia_auc_{bin_name}"] = demog_mia[key_mia].get("auc")
+        # Forget identity accuracy by popularity bin (from demographic_eval)
+        if key_mia in demog_eval and isinstance(demog_eval[key_mia], dict):
+            flat[f"forget_id_acc_{bin_name}"] = (
+                demog_eval[key_mia].get("identity", {}).get("accuracy")
+            )
     return {k: v for k, v in flat.items() if v is not None}
 
 
@@ -406,6 +427,36 @@ def _print_aggregated_table(aggregated: dict, n_seeds: int) -> None:
         )
 
     logger.info("=" * 95)
+
+    # ── Imbalanced subset: per-popularity-bin breakdown ──────────────────
+    has_imb = any(
+        agg.get("forget_id_acc_high") is not None for agg in aggregated.values()
+        if isinstance(agg, dict)
+    )
+    if has_imb:
+        logger.info(f"\n{'='*80}")
+        logger.info(f"  IMBALANCED: PER-POPULARITY-BIN BREAKDOWN")
+        logger.info(f"  (high=~70 imgs, medium=~40 imgs, low=~20 imgs per identity)")
+        logger.info(f"{'='*80}")
+        logger.info(f"{'Method':<16} {'FgAcc-H':>8} {'FgAcc-M':>8} {'FgAcc-L':>8} "
+              f"{'MIA-H':>8} {'MIA-M':>8} {'MIA-L':>8}")
+        logger.info("-" * 62)
+        for method, agg in aggregated.items():
+            if "error" in agg:
+                continue
+            f_h = agg.get("forget_id_acc_high", float("nan"))
+            f_m = agg.get("forget_id_acc_medium", float("nan"))
+            f_l = agg.get("forget_id_acc_low", float("nan"))
+            m_h = agg.get("mia_auc_high", float("nan"))
+            m_m = agg.get("mia_auc_medium", float("nan"))
+            m_l = agg.get("mia_auc_low", float("nan"))
+            if all(np.isnan(v) for v in [f_h, f_m, f_l, m_h, m_m, m_l]):
+                continue
+            logger.info(
+                f"{agg['method']:<16} {f_h:>8.4f} {f_m:>8.4f} {f_l:>8.4f} "
+                f"{m_h:>8.4f} {m_m:>8.4f} {m_l:>8.4f}"
+            )
+        logger.info("=" * 80)
 
 
 def _bootstrap_oracle_comparison(
