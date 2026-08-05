@@ -211,6 +211,14 @@ class VirtualIdentityDataset(Dataset):
         """Unique identity labels present in this split's subset."""
         return sorted(self.df["identity_id"].unique().tolist())
 
+    def identity_label_at(self, idx: int) -> int:
+        """Identity label at index *idx* without loading the image.
+
+        For code that needs the label alone (e.g. relabelling loops),
+        this avoids the full ``__getitem__`` (image decode + transform).
+        """
+        return int(self.df.iloc[idx]["identity_id"])
+
     @property
     def meta_columns(self) -> list[str]:
         """Optional metadata columns detected in this CSV."""

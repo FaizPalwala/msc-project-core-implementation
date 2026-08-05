@@ -279,8 +279,10 @@ class _RelabelledDataset(torch.utils.data.Dataset):
     def __init__(self, base_ds, num_classes: int = 600):
         self.base = base_ds
         self.num_classes = num_classes
+        # identity_label_at() avoids the full image decode+transform
+        # that __getitem__ triggers — a ~200× speedup for init.
         self.fake_id_labels = [
-            random.choice([c for c in range(num_classes) if c != base_ds[i][1]])
+            random.choice([c for c in range(num_classes) if c != base_ds.identity_label_at(i)])
             for i in range(len(base_ds))
         ]
 
