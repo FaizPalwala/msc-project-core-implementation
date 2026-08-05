@@ -58,6 +58,17 @@ SINGLE_JOB=$(sbatch --parsable \
     "$CSV" "$MODEL" "$OUT/single_shot")
 echo "  Single-shot job: $SINGLE_JOB"
 
+# ── Imbalanced equity plots (only when DATASET=imbalanced) ─────────────
+if [ "$DATASET" = "imbalanced" ]; then
+    echo "[$(date)] Submitting imbalanced plots (dependency: $SINGLE_JOB)…"
+    IMBPLOT_JOB=$(sbatch --parsable \
+        --dependency=afterok:$SINGLE_JOB \
+        "$PROJECT_DIR/scripts/slurm_imbalanced_plots.sh" \
+        "$OUT/single_shot/single_shot_aggregated.json" \
+        "$CSV" "$OUT/imbalanced")
+    echo "  Imbalanced plots job: $IMBPLOT_JOB"
+fi
+
 # HP search parallel to single-shot (can run concurrently)
 echo "[$(date)] Submitting HP search (dependency: $TRAIN_JOB)…"
 HP_JOB=$(sbatch --parsable \
