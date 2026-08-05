@@ -70,12 +70,14 @@ def _step_eval(
     csv_path: str,
     device: torch.device,
     forget_step: int,
+    subset: str = "all",
 ) -> dict[str, Any]:
     """Evaluate model after unlearning one forget step."""
-    eval_res = evaluate_full(model, csv_path, device, verbose=False)
+    eval_res = evaluate_full(model, csv_path, device, verbose=False, subset=subset)
     per_id_mia = run_mia_per_identity(
         model, csv_path, device, head="identity",
         score_type="confidence",
+        subset=subset,
     )
 
     r_acc = eval_res.get("retain", {}).get("identity", {}).get("accuracy", float("nan"))

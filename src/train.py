@@ -160,6 +160,7 @@ def train(
     run_name: str = "original_model",
     identity_classes: int = NUM_IDENTITY_CLASSES,
     age_classes: int = NUM_AGE_CLASSES,
+    subset: str = "all",
 ):
     """Train dual-head ResNet-18 on SFHQ-InstantID.
 
@@ -188,9 +189,11 @@ def train(
     # ── Datasets ──────────────────────────────────────────────────────────
     full_train = VirtualIdentityDataset(
         csv_path, split="retain+forget", transform=get_train_transform(),
+        subset=subset,
     )
     test_ds = VirtualIdentityDataset(
         csv_path, split="test", transform=get_val_transform(),
+        subset=subset,
     )
 
     n_val = max(1, int(len(full_train) * val_fraction))
@@ -343,6 +346,9 @@ def main() -> None:
     parser.add_argument("--no_pretrain",     action="store_true")
     parser.add_argument("--freeze_backbone", action="store_true")
     parser.add_argument("--device",          type=str,   default="auto")
+    parser.add_argument("--subset",          type=str,   default="all",
+                        choices=["all", "train", "holdout"],
+                        help="Per-image subset filter (default: all, back-compat)")
     args = parser.parse_args()
 
     train(
@@ -357,6 +363,7 @@ def main() -> None:
         freeze_backbone=args.freeze_backbone,
         device_str=args.device,
         run_name=args.run_name,
+        subset=args.subset,
     )
 
 
