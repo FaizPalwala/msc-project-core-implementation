@@ -74,11 +74,12 @@ def _make_loader(
     shuffle: bool = False,
     forget_step: int | None = None,
     num_workers: int = 2,
+    subset: str = "all",
 ) -> tuple[DataLoader, int]:
     """Build a dual-label DataLoader."""
     if forget_step is not None and split == "forget":
         split = f"forget_step_{forget_step}"
-    ds = VirtualIdentityDataset(csv_path, split=split, transform=transform)
+    ds = VirtualIdentityDataset(csv_path, split=split, transform=transform, subset=subset)
     return (
         DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
                    num_workers=num_workers, pin_memory=True),

@@ -32,10 +32,10 @@ logger = logging.getLogger(__name__)
 
 
 def _loader(csv, split, transform, batch_size, shuffle=False,
-            workers: int | None = None):
+            workers: int | None = None, subset: str = "all"):
     if workers is None:
         workers = resolve_num_workers()
-    ds = VirtualIdentityDataset(csv, split=split, transform=transform)
+    ds = VirtualIdentityDataset(csv, split=split, transform=transform, subset=subset)
     return DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
                       num_workers=workers, pin_memory=True), len(ds)
 
@@ -143,8 +143,9 @@ def msg_kd(
         p.requires_grad_(False)
 
     f_split = f"forget_step_{forget_step}" if forget_step is not None else "forget"
-    f_loader, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True)
-    r_loader, _ = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True)
+    subset_ = kwargs.get("subset", "all")
+    f_loader, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_)
+    r_loader, _ = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True, subset=subset_)
     criterion = nn.CrossEntropyLoss()
     kl_crit = nn.KLDivLoss(reduction="batchmean", log_target=True)
 
@@ -261,8 +262,9 @@ def adaptiformet(
         p.requires_grad_(False)
 
     f_split = f"forget_step_{forget_step}" if forget_step is not None else "forget"
-    f_loader, n_f = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True)
-    r_loader, n_r = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True)
+    subset_ = kwargs.get("subset", "all")
+    f_loader, n_f = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_)
+    r_loader, n_r = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True, subset=subset_)
     criterion = nn.CrossEntropyLoss()
     kl_crit = nn.KLDivLoss(reduction="batchmean", log_target=True)
     opt_f = torch.optim.AdamW(unlearn_m.parameters(), lr=lr_ascent, weight_decay=0.0)
