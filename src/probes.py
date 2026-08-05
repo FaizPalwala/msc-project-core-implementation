@@ -286,9 +286,11 @@ def measure_forgetting(
     from sklearn.metrics.pairwise import cosine_similarity
 
 
-    def _centroid(_model, _split):
-        ds = VirtualIdentityDataset(csv_path, split=_split, transform=get_val_transform(),
-                                    subset=subset)
+    def _centroid(_model, _split, _subset=None):
+        ds = VirtualIdentityDataset(
+            csv_path, split=_split, transform=get_val_transform(),
+            subset=_subset or subset,
+        )
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
                             num_workers=2, pin_memory=True)
         feats, _, _ = extract_features(_model, loader, device)
@@ -298,7 +300,11 @@ def measure_forgetting(
     forget_unl  = _centroid(model_unlearned, "forget")
     retain_orig = _centroid(model_original, "retain")
     retain_unl  = _centroid(model_unlearned, "retain")
-    test_orig   = _centroid(model_original, "test")
+    # Reference centroid: held-out retain images (model never saw them in
+    # training).  The old identity-disjoint "test" split no longer exists;
+    # retain-holdout is the non-member reference without the low-confidence
+    # confound of wholly unseen identities.
+    test_orig   = _centroid(model_original, "retain", _subset="holdout")
 
     # Feature drift on forget set
     feature_mse_forget = float(np.mean((forget_orig - forget_unl) ** 2))

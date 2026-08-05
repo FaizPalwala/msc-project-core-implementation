@@ -162,15 +162,24 @@ def _build_loaders(
     forget_split: str = "forget",
     subset: str = "all",
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
-    """Build retain, test, forget DataLoaders."""
+    """Build retain, test, forget DataLoaders.
+
+    Non-member reference ("test_loader"): in the new dataset schema there is
+    no identity-disjoint "test" split anymore (every identity is retain or
+    forget, each with train/holdout image subsets).  The held-out retain
+    images (subset='holdout') are the non-member reference — images the
+    model never saw during training, from identities it was trained on.
+    This is cleaner than the old unseen-identity split, which carried a
+    systematic low-confidence confound.
+    """
     kw = dict(batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
     retain_loader = DataLoader(
         VirtualIdentityDataset(csv_path, "retain", transform=get_val_transform(),
                                subset=subset), **kw,
     )
     test_loader = DataLoader(
-        VirtualIdentityDataset(csv_path, "test", transform=get_val_transform(),
-                               subset=subset), **kw,
+        VirtualIdentityDataset(csv_path, "retain", transform=get_val_transform(),
+                               subset="holdout"), **kw,
     )
     forget_loader = DataLoader(
         VirtualIdentityDataset(csv_path, forget_split, transform=get_val_transform(),

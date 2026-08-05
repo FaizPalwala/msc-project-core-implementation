@@ -133,6 +133,18 @@ def _evaluate_both_heads(
             age_correct += (age_logits.argmax(dim=1) == age_labels).sum().item()
             total_samples += imgs.size(0)
 
+    if total_samples == 0:
+        # Empty split (e.g. a subset filter that matches nothing).  Returning
+        # NaN instead of crashing keeps the training loop alive; callers
+        # should treat NaN columns as "not evaluated".
+        logger.warning("Empty eval loader — returning NaN metrics")
+        return {
+            "id_acc": float("nan"),
+            "age_acc": float("nan"),
+            "id_loss": float("nan"),
+            "age_loss": float("nan"),
+        }
+
     return {
         "id_acc": id_correct / total_samples,
         "age_acc": age_correct / total_samples,
@@ -191,9 +203,15 @@ def train(
         csv_path, split="retain+forget", transform=get_train_transform(),
         subset=subset,
     )
+    # Test = held-out images of the SAME identities the model trained on
+    # (retain+forget holdout subset).  The old identity-disjoint "test"
+    # split no longer exists in the dataset schema — every identity is
+    # retain or forget, each with train/holdout image subsets.  Evaluating
+    # on holdout gives meaningful generalization accuracy (the old test
+    # column was structurally 0: unseen identities, closed-set head).
     test_ds = VirtualIdentityDataset(
-        csv_path, split="test", transform=get_val_transform(),
-        subset=subset,
+        csv_path, split="retain+forget", transform=get_val_transform(),
+        subset="holdout",
     )
 
     n_val = max(1, int(len(full_train) * val_fraction))
