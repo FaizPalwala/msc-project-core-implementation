@@ -116,6 +116,7 @@ def run_iterative(
     seed: int = 42,
     checkpoint_every: int = 5,
     re_emergence_checks: list[int] | None = None,
+    subset: str = "all",
 ) -> list[dict[str, Any]]:
     """Run one unlearning method over sequential forget steps.
 
@@ -142,7 +143,7 @@ def run_iterative(
 
     # Baseline (step 0)
     logger.info(f"\n  [Step 0 / baseline] Evaluating original model…")
-    baseline = _step_eval(original_model, original_model, csv_path, device, forget_step=0)
+    baseline = _step_eval(original_model, original_model, csv_path, device, forget_step=0, subset=subset)
     baseline.update({
         "step": 0, "method": method_name, "mode": mode,
         "step_time_s": 0.0, "cumulative_time_s": 0.0,
@@ -182,7 +183,7 @@ def run_iterative(
 
             metrics = _step_eval(
                 current_model, original_model, csv_path, device,
-                forget_step=step,
+                forget_step=step, subset=subset,
             )
             record = {
                 "step": step + 1,
@@ -236,6 +237,7 @@ def run_iterative(
                 continue
             per_id = run_mia_per_identity(
                 model_at_check, csv_path, device,
+                subset=subset,
             )
             re_record = {
                 "type": "re_emergence",
@@ -271,6 +273,7 @@ def run_all_iterative(
     scale: float = 1.0,
     checkpoint_every: int = 5,
     re_emergence_checks: list[int] | None = None,
+    subset: str = "all",
 ) -> dict[str, list[dict[str, Any]]]:
     """Run iterative unlearning for all methods."""
     method_configs = load_method_configs(scale=scale)
@@ -299,6 +302,7 @@ def run_all_iterative(
             seed=seed,
             checkpoint_every=checkpoint_every,
             re_emergence_checks=re_emergence_checks,
+            subset=subset,
         )
         all_results[method] = records
 
@@ -482,6 +486,9 @@ def main() -> None:
     parser.add_argument("--checkpoint_every",  type=int, default=5)
     parser.add_argument("--re_emergence",      type=int, nargs="*",
                         default=[5, 10, 15])
+    parser.add_argument("--subset",            type=str, default="all",
+                        choices=["all", "train", "holdout"],
+                        help="Per-image subset filter (default: all)")
     args = parser.parse_args()
 
     if args.n_seeds > 1:
@@ -501,6 +508,7 @@ def main() -> None:
                 scale=args.scale,
                 checkpoint_every=args.checkpoint_every,
                 re_emergence_checks=args.re_emergence or None,
+                subset=args.subset,
             )
         # After all seeds complete, aggregate into μ ± σ
         aggregate_iterative_seeds(args.out)
@@ -517,6 +525,7 @@ def main() -> None:
             scale=args.scale,
             checkpoint_every=args.checkpoint_every,
             re_emergence_checks=args.re_emergence or None,
+            subset=args.subset,
         )
 
 
