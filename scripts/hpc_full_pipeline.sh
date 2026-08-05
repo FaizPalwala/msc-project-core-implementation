@@ -11,7 +11,19 @@
 
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# ── Repo root ────────────────────────────────────────────────────────────
+# Runs interactively (bash scripts/hpc_full_pipeline.sh), so $0 works;
+# the SLURM_SUBMIT_DIR branch is a safety net if this is ever sbatch'd.
+# Guarded by the configs/ marker (present only in the repo root).
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    PROJECT_DIR="$SLURM_SUBMIT_DIR"
+else
+    PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+fi
+[ -d "$PROJECT_DIR/configs" ] || PROJECT_DIR="$(cd "$PROJECT_DIR/.." 2>/dev/null && pwd)"
+[ -d "$PROJECT_DIR/configs" ] || { echo "ERROR: repo root not found (no configs/ in $PROJECT_DIR)" >&2; exit 1; }
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"   # canonicalize (no "..")
+
 LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 

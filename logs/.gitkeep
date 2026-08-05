@@ -1,0 +1,3 @@
+# Keeps the logs/ directory tracked so #SBATCH --output=logs/%x_%j.out
+# resolves at job start (slurmstepd opens the file before the script
+# body runs; a missing dir would fail the job). Log content is gitignored.
