@@ -51,6 +51,7 @@ python src/iterative.py \
     --csv "$CSV" --model "$MODEL" --out "$OUT" \
     --n_steps 15 --mode cumulative \
     --seed 42 --scale 1.0 \
+    --subset holdout \
     --re_emergence 5 10 15
 
 echo "[$(date)] Iterative complete."

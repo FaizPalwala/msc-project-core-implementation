@@ -47,6 +47,7 @@ bash "$PROJECT_DIR/scripts/gpu_preflight.sh" || exit 1
 
 python src/train.py \
     --csv "$CSV" \
+    --subset train \
     --save_dir "$SAVE_DIR" \
     --epochs 30 --lr 1e-3 --batch_size 64 \
     --age_weight 0.5 --seed 42

@@ -29,9 +29,19 @@ mkdir -p "$LOG_DIR"
 
 # ── Config ──────────────────────────────────────────────────────────────
 DATA_DIR="$(dirname "$PROJECT_DIR")/bench"       # bench is a sister of the repo
-CSV="$DATA_DIR/metadata/dataset.csv"
+DATASET="${DATASET:-balanced}"                   # "balanced" or "imbalanced"
+if [ "$DATASET" = "imbalanced" ]; then
+    CSV="$DATA_DIR/metadata/dataset_imbalanced.csv"
+    SCALE=1.0
+    TAG="imb"
+else
+    CSV="$DATA_DIR/metadata/dataset.csv"
+    SCALE=1.0
+    TAG="bal"
+fi
 MODEL="$PROJECT_DIR/results/checkpoints/original_model_best.pt"
 OUT="$PROJECT_DIR/results"
+echo "[$(date)] Pipeline — dataset=$DATASET ($CSV)"
 
 # ── Stage 1: Train ──────────────────────────────────────────────────────
 echo "[$(date)] Submitting train job…"
