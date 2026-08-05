@@ -5,6 +5,9 @@
 #SBATCH --job-name=unlearn_report
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
+#SBATCH --time=01:00:00
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=4G
 # Usage: sbatch scripts/slurm_report.sh <results_root>
 #
 # Consumes the pipeline artifacts under <results_root>/ and produces

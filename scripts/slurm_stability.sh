@@ -5,6 +5,9 @@
 #SBATCH --job-name=unlearn_stab
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
+#SBATCH --time=01:00:00
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=4G
 # Usage: sbatch scripts/slurm_stability.sh <combined_csv> <out_dir>
 
 # ── Repo root ────────────────────────────────────────────────────────────

@@ -5,6 +5,11 @@
 #SBATCH --job-name=unlearn_iter
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
 # Usage: sbatch scripts/slurm_iterative.sh <csv> <model> <out>
 
 # ── Repo root ────────────────────────────────────────────────────────────
