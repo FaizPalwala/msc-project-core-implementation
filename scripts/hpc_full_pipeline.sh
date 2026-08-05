@@ -32,16 +32,18 @@ DATA_DIR="$(dirname "$PROJECT_DIR")/bench"       # bench is a sister of the repo
 DATASET="${DATASET:-balanced}"                   # "balanced" or "imbalanced"
 if [ "$DATASET" = "imbalanced" ]; then
     CSV="$DATA_DIR/metadata/dataset_imbalanced.csv"
-    SCALE=1.0
-    TAG="imb"
-else
+elif [ "$DATASET" = "balanced" ]; then
     CSV="$DATA_DIR/metadata/dataset.csv"
-    SCALE=1.0
-    TAG="bal"
+else
+    echo "ERROR: DATASET must be 'balanced' or 'imbalanced' (got '$DATASET')" >&2
+    echo "Usage:  DATASET=balanced bash scripts/hpc_full_pipeline.sh" >&2
+    echo "        DATASET=imbalanced bash scripts/hpc_full_pipeline.sh" >&2
+    exit 1
 fi
-MODEL="$PROJECT_DIR/results/checkpoints/original_model_best.pt"
-OUT="$PROJECT_DIR/results"
+OUT="$PROJECT_DIR/results/$DATASET"              # namespace by dataset
+MODEL="$OUT/checkpoints/original_model_best.pt"
 echo "[$(date)] Pipeline — dataset=$DATASET ($CSV)"
+echo "  Output → $OUT"
 
 # ── Stage 1: Train ──────────────────────────────────────────────────────
 echo "[$(date)] Submitting train job…"
@@ -111,6 +113,9 @@ REPORT_JOB=$(sbatch --parsable \
 echo "  Report job: $REPORT_JOB"
 
 echo ""
-echo "[$(date)] Pipeline submitted."
+echo "[$(date)] Pipeline submitted ($DATASET)."
+echo "  Dataset: $DATASET ($CSV)"
+echo "  Results: $OUT"
+echo "  Logs:    logs/unlearn_*_*.out (match by job IDs below)"
 echo "  Monitor: squeue -u \$USER"
 echo "  Job IDs: train=$TRAIN_JOB single=$SINGLE_JOB hp=$HP_JOB iter=$ITER_JOB stab=$STAB_JOB canary=$CANARY_JOB report=$REPORT_JOB"
