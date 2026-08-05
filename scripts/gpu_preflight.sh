@@ -29,7 +29,11 @@ fi
 
 echo ""
 echo "[1/5] nvidia-smi"
-nvidia-smi --query-gpu=name,memory.total,driver_version,cuda_version \
+# NOTE: cuda_version is NOT a valid --query-gpu field (query grammar has
+# name/memory.total/driver_version/uuid/... but no cuda_version), so
+# nvidia-smi errors out and flags a healthy GPU as failed. The CUDA
+# runtime version is verified authoritatively by PyTorch in check 3.
+nvidia-smi --query-gpu=name,memory.total,driver_version \
     --format=csv,noheader 2>/dev/null || {
     echo "[FAIL] nvidia-smi query failed — GPU may be unavailable"
     exit 1
