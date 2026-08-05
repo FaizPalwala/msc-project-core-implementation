@@ -131,35 +131,47 @@ def run_single_shot(
             unlearned_model = result["model"]
             method_metrics  = result["metrics"]
 
-            # ── Tier 0: Standard evaluation ───────────────────────────────
-            eval_res = evaluate_full(unlearned_model, csv_path, device, verbose=True)
+            # ── Tier 0: Standard evaluation (holdout images = generalisation) ─
+            eval_res = evaluate_full(unlearned_model, csv_path, device,
+                                     subset="holdout", verbose=True)
+
+            # ── Forget-train evaluation (same images used for unlearning)
+            #     The gap between train and holdout forget accuracy detects
+            #     overfitting-to-forgetting (see §4.3 of METRICS_GUIDE.md).
+            eval_train = evaluate_full(unlearned_model, csv_path, device,
+                                       subset="train", verbose=False)
 
             # ── Tier 1: Per-identity evaluation ───────────────────────────
-            per_id_eval = evaluate_per_identity(unlearned_model, csv_path, device)
+            per_id_eval = evaluate_per_identity(unlearned_model, csv_path, device,
+                                                subset="holdout")
             per_id_mia = run_mia_per_identity(
                 unlearned_model, csv_path, device, head="identity",
+                subset="holdout",
             )
             print_per_identity_summary(per_id_mia)
 
             # ── Max-confidence attack ─────────────────────────────────────
             max_conf = run_max_confidence_attack(
                 unlearned_model, csv_path, device, head="identity",
+                subset="holdout",
             )
             logger.info(f"  Max-confidence AUC: {max_conf['max_confidence_auc']:.4f}")
 
             # ── Demographic MIA ───────────────────────────────────────────
             demog_mia = run_mia_per_demographic(
                 unlearned_model, csv_path, device, head="identity",
+                subset="holdout",
             )
 
             # ── Tier 2: Representation probing ────────────────────────────
             probes_forget = probe_all(
                 unlearned_model, csv_path, device, split="forget",
-                include_identity=(method_name != "no_unlearning"),
+                subset="holdout",
             )
             print_probe_summary(probes_forget)
             forgetting_metrics = measure_forgetting(
                 unlearned_model, original_model, csv_path, device,
+                subset="holdout",
             )
 
             total_time = time.time() - t0
@@ -173,6 +185,7 @@ def run_single_shot(
                 "config": cfg,
                 "method_metrics": method_metrics,
                 "evaluation": _clean_eval(eval_res),
+                "evaluation_train": _clean_eval(eval_train),  # forget-train gap
                 "per_identity_mia": {str(k): v for k, v in per_id_mia.items()
                                      if not isinstance(v, dict)},
                 "max_confidence_attack": max_conf,
@@ -336,6 +349,7 @@ def _flatten_metrics(data: dict) -> dict[str, Any]:
     """Flatten nested evaluation dict into flat key-value pairs for aggregation."""
     flat: dict[str, Any] = {}
     ev = data.get("evaluation", {})
+    ev_train = data.get("evaluation_train", {})
     per_id = data.get("per_identity_mia", {})
     max_c = data.get("max_confidence_attack", {})
     probes = data.get("probes", {})
@@ -344,6 +358,7 @@ def _flatten_metrics(data: dict) -> dict[str, Any]:
     flat["retain_age_acc"] = ev.get("retain", {}).get("age", {}).get("accuracy")
     flat["test_id_acc"] = ev.get("test", {}).get("identity", {}).get("accuracy")
     flat["forget_id_acc"] = ev.get("forget", {}).get("identity", {}).get("accuracy")
+    flat["forget_train_id_acc"] = ev_train.get("forget", {}).get("identity", {}).get("accuracy")
     flat["mia_mean_auc"] = per_id.get("mean_auc")
     flat["mia_std_auc"] = per_id.get("std_auc")
     flat["mia_max_auc"] = per_id.get("max_auc")
@@ -360,13 +375,13 @@ def _print_aggregated_table(aggregated: dict, n_seeds: int) -> None:
     """Print μ ± σ table across seeds."""
     header = (
         f"\n{'Method':<16} {'IdAcc-R':>14} {'MIA-AUC(μ±σ)':>18} "
-        f"{'MaxAUC':>9} {'Probe-Id':>9} {'Time':>8}"
+        f"{'MaxAUC':>9} {'Probe-Id':>9} {'FgTr-Gap':>9} {'Time':>8}"
     )
-    logger.info(f"\n{'='*85}")
+    logger.info(f"\n{'='*95}")
     logger.info(f"  AGGREGATED RESULTS (μ ± σ over {n_seeds} seeds)")
-    logger.info(f"{'='*85}")
+    logger.info(f"{'='*95}")
     logger.info(header)
-    logger.info("─" * 85)
+    logger.info("─" * 95)
 
     for method, agg in aggregated.items():
         if "error" in agg:
@@ -378,15 +393,18 @@ def _print_aggregated_table(aggregated: dict, n_seeds: int) -> None:
         mia_s = agg.get("mia_mean_auc_std", 0)
         max_a = agg.get("max_conf_auc", float("nan"))
         probe = agg.get("probe_identity_acc", float("nan"))
+        fg_hold = agg.get("forget_id_acc", float("nan"))
+        fg_train = agg.get("forget_train_id_acc", float("nan"))
+        gap = (fg_train - fg_hold) if not (isinstance(fg_train, float) and np.isnan(fg_train)) else float("nan")
         t = agg.get("total_time_s", 0)
 
         logger.info(
             f"{agg['method']:<16} {r_acc:>8.4f}±{r_std:.4f} "
             f"{mia:>8.4f}±{mia_s:.4f} {max_a:>9.4f} "
-            f"{probe:>9.4f} {t:>8.1f}"
+            f"{probe:>9.4f} {gap:>9.4f} {t:>8.1f}"
         )
 
-    logger.info("=" * 85)
+    logger.info("=" * 95)
 
 
 def _bootstrap_oracle_comparison(

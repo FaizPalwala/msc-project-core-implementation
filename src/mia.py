@@ -160,17 +160,21 @@ def _build_loaders(
     csv_path: str,
     batch_size: int = 128,
     forget_split: str = "forget",
+    subset: str = "all",
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     """Build retain, test, forget DataLoaders."""
     kw = dict(batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
     retain_loader = DataLoader(
-        VirtualIdentityDataset(csv_path, "retain", transform=get_val_transform()), **kw,
+        VirtualIdentityDataset(csv_path, "retain", transform=get_val_transform(),
+                               subset=subset), **kw,
     )
     test_loader = DataLoader(
-        VirtualIdentityDataset(csv_path, "test", transform=get_val_transform()), **kw,
+        VirtualIdentityDataset(csv_path, "test", transform=get_val_transform(),
+                               subset=subset), **kw,
     )
     forget_loader = DataLoader(
-        VirtualIdentityDataset(csv_path, forget_split, transform=get_val_transform()), **kw,
+        VirtualIdentityDataset(csv_path, forget_split, transform=get_val_transform(),
+                               subset=subset), **kw,
     )
     return retain_loader, test_loader, forget_loader
 
@@ -183,9 +187,11 @@ def run_mia_full(
     score_type: str = "confidence",
     head: str = "identity",
     verbose: bool = True,
+    subset: str = "all",
 ) -> dict[str, Any]:
     """Run MIA on full forget set (all 60 identities)."""
-    retain_loader, test_loader, forget_loader = _build_loaders(csv_path, batch_size)
+    retain_loader, test_loader, forget_loader = _build_loaders(
+        csv_path, batch_size, subset=subset)
 
     result = run_mia_threshold(
         model, retain_loader, test_loader, forget_loader,
@@ -208,12 +214,13 @@ def run_mia_per_identity(
     batch_size: int = 128,
     score_type: str = "confidence",
     head: str = "identity",
+    subset: str = "all",
 ) -> dict[str, Any]:
     """Run MIA separately for each forget identity (identity_id).
 
     Returns dict with per-identity AUCs + aggregate statistics.
     """
-    _, test_loader, _ = _build_loaders(csv_path, batch_size)
+    _, test_loader, _ = _build_loaders(csv_path, batch_size, subset=subset)
 
     # Pre-compute test scores once
     score_fn = get_confidence_scores if score_type == "confidence" else get_loss_scores
@@ -222,6 +229,7 @@ def run_mia_per_identity(
     # Iterate over forget identities
     forget_ds = VirtualIdentityDataset(
         csv_path, split="forget", transform=get_val_transform(),
+        subset=subset,
     )
     id_to_indices: dict[int, list[int]] = defaultdict(list)
     for i in range(len(forget_ds)):
@@ -276,6 +284,7 @@ def run_max_confidence_attack(
     device: torch.device,
     batch_size: int = 128,
     head: str = "identity",
+    subset: str = "all",
 ) -> dict[str, Any]:
     """Single-image worst-case attack.
 
@@ -283,7 +292,7 @@ def run_max_confidence_attack(
     highest model confidence.  If even that single image can't be
     distinguished from test-set images, the identity is fully forgotten.
     """
-    _, test_loader, _ = _build_loaders(csv_path, batch_size)
+    _, test_loader, _ = _build_loaders(csv_path, batch_size, subset=subset)
 
     # Pre-compute test confidence scores
     model.eval()
@@ -301,6 +310,7 @@ def run_max_confidence_attack(
     # Per-identity max confidence
     forget_ds = VirtualIdentityDataset(
         csv_path, split="forget", transform=get_val_transform(),
+        subset=subset,
     )
     id_to_indices: dict[int, list[int]] = defaultdict(list)
     for i in range(len(forget_ds)):
@@ -347,17 +357,19 @@ def run_mia_per_demographic(
     batch_size: int = 128,
     score_type: str = "confidence",
     head: str = "identity",
+    subset: str = "all",
 ) -> dict[str, Any]:
     """MIA broken down by age group and popularity bin.
 
     Returns nested dict: results[group_key] → standard MIA result dict.
     """
-    _, test_loader, _ = _build_loaders(csv_path, batch_size)
+    _, test_loader, _ = _build_loaders(csv_path, batch_size, subset=subset)
     score_fn = get_confidence_scores if score_type == "confidence" else get_loss_scores
     test_scores = score_fn(model, test_loader, device, head=head)
 
     forget_ds = VirtualIdentityDataset(
         csv_path, split="forget", transform=get_val_transform(),
+        subset=subset,
     )
     results: dict[str, Any] = {}
 

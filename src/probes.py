@@ -86,12 +86,14 @@ def probe_identity(
     batch_size: int = 128,
     C: float = 1.0,
     max_samples: int | None = None,
+    subset: str = "all",
 ) -> dict[str, Any]:
     """Train a LogisticRegression probe to predict identity (identity_id).
 
     Returns accuracy and per-class metrics on the probe's predictions.
     """
-    ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform())
+    ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform(),
+                                subset=subset)
     loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
                         num_workers=2, pin_memory=True)
 
@@ -140,9 +142,11 @@ def probe_age(
     split: str = "retain",
     batch_size: int = 128,
     C: float = 1.0,
+    subset: str = "all",
 ) -> dict[str, Any]:
     """Train a LogisticRegression probe to predict age group (4-class)."""
-    ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform())
+    ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform(),
+                                subset=subset)
     loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
                         num_workers=2, pin_memory=True)
 
@@ -181,12 +185,14 @@ def probe_gender(
     split: str = "retain",
     batch_size: int = 128,
     C: float = 1.0,
+    subset: str = "all",
 ) -> dict[str, Any] | None:
     """Train a LogisticRegression probe to predict gender.
 
     Returns None if the 'gender' column is not present in the CSV.
     """
-    ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform())
+    ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform(),
+                                subset=subset)
     gender_arr = _get_meta_column(ds, "gender")
     if gender_arr is None:
         return None
@@ -231,6 +237,7 @@ def probe_all(
     split: str = "retain",
     batch_size: int = 128,
     include_identity: bool = True,
+    subset: str = "all",
 ) -> dict[str, Any]:
     """Run all available probes and return a summary dict."""
     results: dict[str, Any] = {}
@@ -238,15 +245,17 @@ def probe_all(
     if include_identity:
         results["identity"] = probe_identity(
             model, csv_path, device, split=split, batch_size=batch_size,
-            max_samples=20_000,
+            max_samples=20_000, subset=subset,
         )
 
     results["age"] = probe_age(
         model, csv_path, device, split=split, batch_size=batch_size,
+        subset=subset,
     )
 
     gender_result = probe_gender(
         model, csv_path, device, split=split, batch_size=batch_size,
+        subset=subset,
     )
     if gender_result is not None:
         results["gender"] = gender_result
@@ -263,6 +272,7 @@ def measure_forgetting(
     csv_path: str,
     device: torch.device,
     batch_size: int = 128,
+    subset: str = "all",
 ) -> dict[str, Any]:
     """Compare representations before and after unlearning.
 
@@ -277,7 +287,8 @@ def measure_forgetting(
 
 
     def _centroid(_model, _split):
-        ds = VirtualIdentityDataset(csv_path, split=_split, transform=get_val_transform())
+        ds = VirtualIdentityDataset(csv_path, split=_split, transform=get_val_transform(),
+                                    subset=subset)
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
                             num_workers=2, pin_memory=True)
         feats, _, _ = extract_features(_model, loader, device)

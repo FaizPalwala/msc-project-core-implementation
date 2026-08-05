@@ -116,6 +116,7 @@ class VirtualIdentityDataset(Dataset):
         split: str = "retain",
         transform: T.Compose | None = None,
         img_size: int = 224,
+        subset: str = "all",   # "all" | "train" | "holdout"
     ) -> None:
         csv_path = Path(csv_path)
         # Auto-detect format: .parquet → read_parquet, else read_csv
@@ -152,6 +153,18 @@ class VirtualIdentityDataset(Dataset):
                 f"Choose from {self.VALID_SPLITS}, "
                 f"'forget_step_N', or 'forget_variant_N_M'."
             )
+
+        # ── Subset filter (per-image train/holdout) ───────────────────────
+        if subset != "all" and "image_subset" in df.columns:
+            if subset in ("train", "holdout"):
+                df = df[df["image_subset"] == subset]
+            else:
+                raise ValueError(
+                    f"Unknown subset '{subset}'. "
+                    f"Choose 'all', 'train', or 'holdout'."
+                )
+        # If image_subset column is missing (old CSV), all images are
+        # treated as "all" regardless of the subset parameter — back‑compat.
 
         # Drop rows with invalid age labels
         if "age_group" in df.columns:

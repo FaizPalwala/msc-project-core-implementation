@@ -138,12 +138,14 @@ def evaluate_full(
     device: torch.device,
     batch_size: int = 128,
     verbose: bool = True,
+    subset: str = "all",   # "all" | "train" | "holdout"
 ) -> dict[str, Any]:
     """Evaluate on retain, test, and forget splits (both heads)."""
     results: dict[str, Any] = {}
 
     for split in ["retain", "test", "forget"]:
-        ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform())
+        ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform(),
+                                    subset=subset)
         if len(ds) == 0:
             continue
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
@@ -174,13 +176,15 @@ def evaluate_per_identity(
     csv_path: str,
     device: torch.device,
     batch_size: int = 128,
+    subset: str = "all",
 ) -> dict[int, dict[str, Any]]:
     """Evaluate each forget identity (forget_variant) separately.
 
     Returns dict keyed by identity_id → per-head eval summary.
     Uses the entire forget split, iterating over unique identity IDs.
     """
-    ds = VirtualIdentityDataset(csv_path, split="forget", transform=get_val_transform())
+    ds = VirtualIdentityDataset(csv_path, split="forget", transform=get_val_transform(),
+                                subset=subset)
     id_to_indices: dict[int, list[int]] = defaultdict(list)
     for i in range(len(ds)):
         cid = int(ds.df.iloc[i]["identity_id"])
