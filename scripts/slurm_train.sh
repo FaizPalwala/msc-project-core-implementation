@@ -34,10 +34,11 @@ module load cuda/12.6.2
 conda activate core
 
 DATA_DIR="$(dirname "$PROJECT_DIR")/bench"       # bench is a sister of the repo
+source "$PROJECT_DIR/scripts/slurm_dataset_helper.sh"  # sets DATASET, CSV_DEFAULT, OUT_BASE
 LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
-CSV="${1:-$DATA_DIR/metadata/dataset.csv}"
-SAVE_DIR="${2:-$PROJECT_DIR/results/checkpoints}"
+CSV="${1:-$CSV_DEFAULT}"
+SAVE_DIR="${2:-$OUT_BASE/checkpoints}"
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Training on $CSV → $SAVE_DIR"

@@ -42,10 +42,11 @@ module load cuda/12.6.2
 conda activate core
 
 DATA_DIR="$(dirname "$PROJECT_DIR")/bench"       # bench is a sister of the repo
+source "$PROJECT_DIR/scripts/slurm_dataset_helper.sh"  # sets DATASET, CSV_DEFAULT, OUT_BASE
 LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
-CSV="${1:-$DATA_DIR/metadata/dataset.csv}"
-OUT="${2:-$PROJECT_DIR/results/canary}"
+CSV="${1:-$CSV_DEFAULT}"
+OUT="${2:-$OUT_BASE/canary}"
 shift 2
 IDENTITIES=("$@")
 if [ ${#IDENTITIES[@]} -eq 0 ]; then
