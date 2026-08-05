@@ -89,7 +89,7 @@ def run_ablation(
             "time_s": res["metrics"].get("unlearning_time_s", 0),
             "early_stopped": res["metrics"].get("early_stopped", False),
         }
-        print(
+        logger.info(
             f"    retain={results[name]['retain_id_acc']:.4f} | "
             f"mia={results[name]['mia_mean_auc']:.4f} | "
             f"adv={results[name]['forget_advantage']:.4f} | "
@@ -114,7 +114,7 @@ def run_ablation(
           f"{'Leaked':>7} {'Steps':>6}")
     logger.info("─" * 65)
     for name, r in results.items():
-        print(
+        logger.info(
             f"{name:<26} {r['retain_id_acc']:>7.4f} "
             f"{r['mia_mean_auc']:>9.4f} {r['forget_advantage']:>7.4f} "
             f"{r['fraction_leaked']:>7.4f} {r['steps_used']:>6}"

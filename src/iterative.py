@@ -282,7 +282,7 @@ def run_all_iterative(
         methods = sorted(m for m in METHOD_REGISTRY if m in method_configs)
     if "retrain" in methods:
         methods = [m for m in methods if m != "retrain"]
-        logger.info("[INFO] Retrain oracle skipped in iterative mode (too expensive)")
+        logger.info("Retrain oracle skipped in iterative mode (too expensive)")
 
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)

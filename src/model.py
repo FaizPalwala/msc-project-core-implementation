@@ -185,7 +185,7 @@ def load_model(
         model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
     else:
         # Legacy single-head checkpoint → identity head random, age head loaded
-        logger.info("[INFO] Legacy single-head checkpoint detected — "
+        logger.info("Legacy single-head checkpoint detected — "
               "loading into age head; identity head will be randomly initialised.")
         age_cls = checkpoint.get("num_classes", NUM_AGE_CLASSES)
         model = build_dual_head_resnet18(

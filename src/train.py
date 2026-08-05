@@ -184,7 +184,7 @@ def train(
     """
     set_seed(seed)
     device = resolve_device(device_str)
-    logger.info(f"[INFO] Device: {device} | Seed: {seed} | Epochs: {epochs}")
+    logger.info(f"Device: {device} | Seed: {seed} | Epochs: {epochs}")
 
     # ── Datasets ──────────────────────────────────────────────────────────
     full_train = VirtualIdentityDataset(
@@ -210,7 +210,7 @@ def train(
     tst_loader = DataLoader(test_ds, batch_size=128, shuffle=False,
                             num_workers=resolve_num_workers(), pin_memory=True)
 
-    logger.info(f"[INFO] Train: {len(trn_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
+    logger.info(f"Train: {len(trn_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
 
     # ── Model ─────────────────────────────────────────────────────────────
     model = build_dual_head_resnet18(

@@ -92,7 +92,7 @@ def run_single_shot(
         methods = sorted(m for m in METHOD_REGISTRY if m in method_configs)
     if skip_retrain and "retrain" in methods:
         methods = [m for m in methods if m != "retrain"]
-        logger.info("[INFO] Skipping retrain oracle")
+        logger.info("Skipping retrain oracle")
 
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -117,6 +117,7 @@ def run_single_shot(
         logger.info(f"{'─'*60}")
 
         cfg = method_configs.get(method_name, {})
+        cfg["subset"] = "train"   # methods operate on train images only
         t0 = time.time()
 
         try:

@@ -157,7 +157,7 @@ def evaluate_full(
               f"{'AgeAcc':>9}  {'AgeLoss':>9}  {'N':>7}")
         logger.info("-" * 58)
         for split, m in results.items():
-            print(
+            logger.info(
                 f"{split:<12} {m['identity']['accuracy']:>9.4f}  "
                 f"{m['identity']['loss']:>9.4f}  "
                 f"{m['age']['accuracy']:>9.4f}  "
