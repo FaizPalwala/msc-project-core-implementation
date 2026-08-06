@@ -42,7 +42,7 @@ from model import load_model, copy_model
 from baselines import BASELINE_REGISTRY
 from sota_methods import SOTA_REGISTRY
 from novel_variant import NOVEL_REGISTRY
-from interfaces import validate_unlearning_result
+from interfaces import validate_unlearning_result, prepare_method_call
 
 import logging
 
@@ -289,7 +289,7 @@ def run_all_iterative(
     all_results: dict[str, list[dict[str, Any]]] = {}
 
     for method in methods:
-        cfg = method_configs.get(method, {})
+        cfg = prepare_method_call(method_configs.get(method, {}))  # pins subset="train"
         records = run_iterative(
             method_name=method,
             method_cfg=cfg,

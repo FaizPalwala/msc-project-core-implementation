@@ -127,11 +127,13 @@ def retrain_oracle(
 
     retain_ds = VirtualIdentityDataset(
         csv_path, split="retain", transform=get_train_transform(),
+        subset=kwargs.get("subset", "all"),
     )
 
     if forget_step is not None:
         full_forget_ds = VirtualIdentityDataset(
             csv_path, split="forget", transform=get_train_transform(),
+            subset=kwargs.get("subset", "all"),
         )
         retain_indices = [
             i for i in range(len(full_forget_ds))
@@ -207,11 +209,13 @@ def gradient_ascent(
 
     f_split = f"forget_step_{forget_step}" if forget_step is not None else "forget"
     f_loader, _ = _make_loader(csv_path, f_split, get_val_transform(),
-                               batch_size, shuffle=True)
+                               batch_size, shuffle=True,
+                               subset=kwargs.get("subset", "all"))
     r_loader = None
     if retain_reg:
         r_loader, _ = _make_loader(csv_path, "retain", get_val_transform(),
-                                   batch_size, shuffle=True)
+                                   batch_size, shuffle=True,
+                                   subset=kwargs.get("subset", "all"))
 
     optimizer = torch.optim.SGD(
         unlearn_model.parameters(), lr=ga_lr, momentum=0.9,
@@ -314,6 +318,7 @@ def successive_random_relabelling(
     f_split = f"forget_step_{forget_step}" if forget_step is not None else "forget"
     forget_ds = VirtualIdentityDataset(
         csv_path, split=f_split, transform=get_train_transform(),
+        subset=kwargs.get("subset", "all"),
     )
     relabelled = _RelabelledDataset(forget_ds, num_classes=identity_classes)
     loader = DataLoader(relabelled, batch_size=batch_size, shuffle=True,
@@ -369,6 +374,7 @@ def fine_tune_retain(
 
     retain_ds = VirtualIdentityDataset(
         csv_path, split="retain", transform=get_train_transform(),
+        subset=kwargs.get("subset", "all"),
     )
     loader = DataLoader(retain_ds, batch_size=batch_size, shuffle=True,
                         num_workers=resolve_num_workers(), pin_memory=True)

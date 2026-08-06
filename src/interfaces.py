@@ -37,6 +37,22 @@ class UnlearningResult(TypedDict, total=False):
 REQUIRED_KEYS = ("model", "method", "metrics")
 
 
+def prepare_method_call(cfg: dict) -> dict:
+    """Pin ``subset='train'`` on an unlearning-method config.
+
+    Unlearning methods must never see holdout images — the holdout is
+    reserved for post-unlearning evaluation.  All runners (single_shot,
+    iterative, hparam_search, ablation_study) must build method configs
+    through this helper so the pin cannot be forgotten.
+
+    ``subset`` is injected into the config dict, which methods receive via
+    ``**cfg`` and forward to their dataset construction.
+    """
+    out = dict(cfg)
+    out["subset"] = "train"
+    return out
+
+
 def validate_unlearning_result(result: dict, method_name: str) -> None:
     """Validate a method's return dict against the contract.
 

@@ -43,7 +43,7 @@ from device_utils import resolve_device
 from evaluate import evaluate_full
 from mia import run_mia_per_identity
 from model import load_model
-from interfaces import validate_unlearning_result
+from interfaces import validate_unlearning_result, prepare_method_call
 
 
 import logging
@@ -233,14 +233,16 @@ def run_trial(
         model=original_model,
         csv_path=csv_path,
         device=device,
-        **cfg,
+        **prepare_method_call(cfg),   # pins subset="train" (never see holdout)
     )
     validate_unlearning_result(result, method_name)
     unlearned = result["model"]
     elapsed = time.time() - t0
 
-    eval_res = evaluate_full(unlearned, csv_path, device, verbose=False)
-    per_id = run_mia_per_identity(unlearned, csv_path, device, head="identity")
+    # HP evaluation is a utility probe — use holdout images (generalisation)
+    eval_res = evaluate_full(unlearned, csv_path, device, verbose=False, subset="holdout")
+    per_id = run_mia_per_identity(unlearned, csv_path, device, head="identity",
+                                  subset="holdout")
 
     retain_acc = eval_res.get("retain", {}).get("identity", {}).get("accuracy", 0.0)
     f_adv = abs(per_id.get("mean_auc", 0.5) - 0.5)

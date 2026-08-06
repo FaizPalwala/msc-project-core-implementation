@@ -119,9 +119,13 @@ def verify_canary_unlearning(
     results: dict[str, Any] = {}
 
     for cid in identity_ids:
+        # Canary verification deliberately inspects ALL images of the canary
+        # identity (train + holdout) — the canary pattern was inserted into
+        # every image before training, so we verify its erasure everywhere.
         ds = VirtualIdentityDataset(
             csv_path, split=f"forget_variant_0_{cid % 4}",  # approximate
             transform=get_val_transform(),
+            subset="all",
         )
         # Collect features for this identity's images
         loader = torch.utils.data.DataLoader(

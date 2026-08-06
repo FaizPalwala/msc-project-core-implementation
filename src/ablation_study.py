@@ -28,7 +28,7 @@ from evaluate import evaluate_full
 from mia import run_mia_full, run_mia_per_identity
 from model import load_model
 from novel_variant import adaptiformet
-from interfaces import validate_unlearning_result
+from interfaces import validate_unlearning_result, prepare_method_call
 
 
 
@@ -67,14 +67,15 @@ def run_ablation(
 
     logger.info(f"\n  Running {len(ABLATIONS)} ablation variants…")
     for name, overrides in ABLATIONS.items():
-        cfg = {**base_cfg, **overrides}
+        cfg = prepare_method_call({**base_cfg, **overrides})  # pins subset="train"
         logger.info(f"\n  ── {name}")
         res = adaptiformet(original, csv_path, device, seed=seed, **cfg)
         validate_unlearning_result(res, "adaptiformet")
         m = res["model"]
 
-        ev = evaluate_full(m, csv_path, device, verbose=False)
-        per_id = run_mia_per_identity(m, csv_path, device, head="identity")
+        ev = evaluate_full(m, csv_path, device, verbose=False, subset="holdout")
+        per_id = run_mia_per_identity(m, csv_path, device, head="identity",
+                                      subset="holdout")
 
         results[name] = {
             "retain_id_acc": ev.get("retain", {}).get("identity", {}).get("accuracy", 0),

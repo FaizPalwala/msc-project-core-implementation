@@ -116,7 +116,7 @@ class VirtualIdentityDataset(Dataset):
         split: str = "retain",
         transform: T.Compose | None = None,
         img_size: int = 224,
-        subset: str = "all",   # "all" | "train" | "holdout"
+        subset: str | None = None,  # None → fail-fast; "all"|"train"|"holdout"
     ) -> None:
         csv_path = Path(csv_path)
         # Auto-detect format: .parquet → read_parquet, else read_csv
@@ -155,14 +155,24 @@ class VirtualIdentityDataset(Dataset):
             )
 
         # ── Subset filter (per-image train/holdout) ───────────────────────
-        if subset != "all" and "image_subset" in df.columns:
+        has_subset_col = "image_subset" in df.columns
+        if has_subset_col:
+            if subset is None:
+                raise ValueError(
+                    f"CSV {csv_path.name} has an 'image_subset' column but no "
+                    f"subset was given. Pass subset='train' or subset='holdout' "
+                    f"explicitly — subset='all' silently leaks holdout images "
+                    f"into training and corrupts every evaluation metric. "
+                    f"(If 'all' is genuinely intended, pass subset='all' explicitly.)"
+                )
             if subset in ("train", "holdout"):
                 df = df[df["image_subset"] == subset]
-            else:
+            elif subset != "all":
                 raise ValueError(
                     f"Unknown subset '{subset}'. "
                     f"Choose 'all', 'train', or 'holdout'."
                 )
+            # subset="all" (explicit) → no filtering, deliberate use
         # If image_subset column is missing (old CSV), all images are
         # treated as "all" regardless of the subset parameter — back‑compat.
 

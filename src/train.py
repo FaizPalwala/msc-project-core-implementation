@@ -364,9 +364,11 @@ def main() -> None:
     parser.add_argument("--no_pretrain",     action="store_true")
     parser.add_argument("--freeze_backbone", action="store_true")
     parser.add_argument("--device",          type=str,   default="auto")
-    parser.add_argument("--subset",          type=str,   default="all",
+    parser.add_argument("--subset",          type=str,   default="train",
                         choices=["all", "train", "holdout"],
-                        help="Per-image subset filter (default: all, back-compat)")
+                        help="Per-image subset filter for the training set "
+                             "(default: train; 'all' only for legacy CSVs "
+                             "without image_subset column)")
     args = parser.parse_args()
 
     train(

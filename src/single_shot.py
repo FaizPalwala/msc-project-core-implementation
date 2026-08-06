@@ -35,7 +35,7 @@ from model import load_model
 from baselines import BASELINE_REGISTRY
 from sota_methods import SOTA_REGISTRY
 from novel_variant import NOVEL_REGISTRY
-from interfaces import validate_unlearning_result
+from interfaces import validate_unlearning_result, prepare_method_call
 
 import logging
 
@@ -117,7 +117,7 @@ def run_single_shot(
         logger.info(f"{'─'*60}")
 
         cfg = method_configs.get(method_name, {})
-        cfg["subset"] = "train"   # methods operate on train images only
+        cfg = prepare_method_call(cfg)   # pins subset="train" (never see holdout)
         t0 = time.time()
 
         try:
