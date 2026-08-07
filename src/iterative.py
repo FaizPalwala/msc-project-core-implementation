@@ -159,6 +159,7 @@ def run_iterative(
     subset: str = "all",
     schedule: str = "uniform",
     order_seed: int | None = None,
+    best_configs_path: str | None = None,
 ) -> list[dict[str, Any]]:
     """Run one unlearning method over sequential forget steps.
 
@@ -271,6 +272,9 @@ def run_iterative(
                 "mode": mode,
                 "schedule": schedule,
                 "order_seed": order_seed,
+                # Config provenance: 'default' (YAML) vs 'optimized'
+                # (HP-search best configs merged in run_all_iterative).
+                "config_source": ("optimized" if best_configs_path else "default"),
                 # Analysis axis per Shen et al. (2025): cumulative forgotten
                 # count, never raw step index (poisson batch sizes vary).
                 "cumulative_forgotten": cumulative_forgotten_count(
@@ -362,9 +366,11 @@ def run_all_iterative(
     subset: str = "all",
     schedule: str = "uniform",
     order_seed: int | None = None,
+    best_configs_path: str | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Run iterative unlearning for all methods."""
-    method_configs = load_method_configs(scale=scale)
+    method_configs = load_method_configs(scale=scale,
+                                         best_configs_path=best_configs_path)
 
     if methods is None:
         methods = sorted(m for m in METHOD_REGISTRY if m in method_configs)
@@ -412,6 +418,7 @@ def run_all_iterative(
             subset=subset,
             schedule=schedule,
             order_seed=order_seed,
+            best_configs_path=best_configs_path,
         )
         all_results[method] = records
 
@@ -435,7 +442,8 @@ def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
 
 
 _FLAT_COLS = [
-    "step", "method", "mode", "schedule", "order_seed", "cumulative_forgotten",
+    "step", "method", "mode", "schedule", "order_seed", "config_source",
+    "cumulative_forgotten",
     "retain_acc", "forget_acc",
     "step_forget_acc", "step_forget_train_acc",
     "retain_age_acc", "mia_mean_auc", "mia_max_auc", "forget_advantage",
@@ -611,6 +619,10 @@ def main() -> None:
                              "step.  Different seeds per run → μ±σ across "
                              "forget orderings on the same pretrained model "
                              "(P3, no retraining).")
+    parser.add_argument("--best_configs",      type=str, default=None,
+                        help="Directory of hparam *_best_config.json files "
+                             "(or a single merged JSON) — tuned per-method "
+                             "values override the YAML defaults.")
     args = parser.parse_args()
 
     if args.n_seeds > 1:
@@ -638,6 +650,7 @@ def main() -> None:
                 subset=args.subset,
                 schedule=args.schedule,
                 order_seed=order_seed,
+                best_configs_path=args.best_configs,
             )
         # After all seeds complete, aggregate into μ ± σ
         aggregate_iterative_seeds(args.out)
@@ -657,6 +670,7 @@ def main() -> None:
             subset=args.subset,
             schedule=args.schedule,
             order_seed=args.order_seed,
+            best_configs_path=args.best_configs,
         )
 
 

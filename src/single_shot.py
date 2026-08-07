@@ -66,6 +66,7 @@ def run_single_shot(
     scale: float = 1.0,
     skip_retrain: bool = False,
     mia_score_types: tuple[str, ...] = ("confidence", "loss"),
+    best_configs_path: str | None = None,
 ) -> dict[str, Any]:
     """Run single-shot evaluation on the combined forget set.
 
@@ -78,6 +79,9 @@ def run_single_shot(
         seed:        Random seed.
         scale:       Smoke-test scaling factor (1.0 = full).
         skip_retrain: Skip retrain oracle (expensive).
+        best_configs_path: Optional hparam best_configs.json — tuned values
+               override the YAML defaults per method ("single-shot with best
+               params after HP search").
         mia_score_types: MIA score types to compute.
 
     Returns:
@@ -86,7 +90,7 @@ def run_single_shot(
     torch.manual_seed(seed)
     device = resolve_device(device_str)
 
-    method_configs = load_method_configs(scale=scale)
+    method_configs = load_method_configs(scale=scale, best_configs_path=best_configs_path)
 
     if methods is None:
         methods = sorted(m for m in METHOD_REGISTRY if m in method_configs)
@@ -196,6 +200,7 @@ def run_single_shot(
             all_results[method_name] = {
                 "method": display,
                 "config": cfg,
+                "config_source": ("optimized" if best_configs_path else "default"),
                 "method_metrics": method_metrics,
                 "evaluation": _clean_eval(eval_res),
                 "evaluation_train": _clean_eval(eval_train),  # forget-train gap
@@ -254,6 +259,7 @@ def run_single_shot_multi_seed(
     n_seeds: int = 5,
     scale: float = 1.0,
     skip_retrain: bool = False,
+    best_configs_path: str | None = None,
 ) -> dict[str, Any]:
     """Run single-shot evaluation with multiple seeds, reporting μ ± σ.
 
@@ -286,6 +292,7 @@ def run_single_shot_multi_seed(
             seed=seed,
             scale=scale,
             skip_retrain=skip_retrain,
+            best_configs_path=best_configs_path,
         )
         all_seed_results.append(result)
 
@@ -376,6 +383,8 @@ def _flatten_metrics(data: dict) -> dict[str, Any]:
     flat["retain_age_acc"] = ev.get("retain", {}).get("age", {}).get("accuracy")
     flat["forget_id_acc"] = ev.get("forget", {}).get("identity", {}).get("accuracy")
     flat["forget_train_id_acc"] = ev_train.get("forget", {}).get("identity", {}).get("accuracy")
+    # Config provenance: 'default' (YAML) vs 'optimized' (HP-search best).
+    flat["config_source"] = data.get("config_source", "default")
     flat["mia_mean_auc"] = per_id.get("mean_auc")
     flat["mia_std_auc"] = per_id.get("std_auc")
     flat["mia_max_auc"] = per_id.get("max_auc")
@@ -685,6 +694,10 @@ def main() -> None:
     parser.add_argument("--n_seeds",      type=int, default=5)
     parser.add_argument("--scale",        type=float, default=1.0)
     parser.add_argument("--skip_retrain", action="store_true")
+    parser.add_argument("--best_configs", type=str, default=None,
+                        help="Path to hparam best_configs.json — tuned "
+                             "per-method values override the YAML defaults "
+                             "('single-shot with best params after HP search').")
     args = parser.parse_args()
 
     if args.n_seeds > 1:
@@ -698,6 +711,7 @@ def main() -> None:
             n_seeds=args.n_seeds,
             scale=args.scale,
             skip_retrain=args.skip_retrain,
+            best_configs_path=args.best_configs,
         )
     else:
         run_single_shot(
@@ -709,6 +723,7 @@ def main() -> None:
             seed=args.seed,
             scale=args.scale,
             skip_retrain=args.skip_retrain,
+            best_configs_path=args.best_configs,
         )
 
 
