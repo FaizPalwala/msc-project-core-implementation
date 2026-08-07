@@ -33,7 +33,10 @@ import torch
 from torch.utils.data import DataLoader
 
 from config_loader import load_method_configs
-from dataset import VirtualIdentityDataset, get_val_transform
+from dataset import (
+    VirtualIdentityDataset, forget_split_name,
+    cumulative_forgotten_count, get_val_transform,
+)
 from device_utils import resolve_device
 from evaluate import evaluate_full, evaluate_model
 from mia import (
@@ -73,6 +76,7 @@ def _step_eval(
     device: torch.device,
     forget_step: int,
     subset: str = "all",
+    schedule: str = "uniform",
 ) -> dict[str, Any]:
     """Evaluate model after unlearning one forget step.
 
@@ -97,13 +101,15 @@ def _step_eval(
     r_age = eval_res.get("retain", {}).get("age", {}).get("accuracy", float("nan"))
     drift = _weight_l2(model, original_model)
 
-    # Step-local forget accuracy (this step's identities only).
+    # Step-local forget accuracy (this step's identities only), on the
+    # schedule's own batch column (uniform vs poisson).
+    step_split = forget_split_name(forget_step, schedule)
     step_ds_hold = VirtualIdentityDataset(
-        csv_path, split=f"forget_step_{forget_step}",
+        csv_path, split=step_split,
         transform=get_val_transform(), subset="holdout",
     )
     step_ds_train = VirtualIdentityDataset(
-        csv_path, split=f"forget_step_{forget_step}",
+        csv_path, split=step_split,
         transform=get_val_transform(), subset="train",
     )
     step_forget_acc = float("nan")
@@ -149,8 +155,14 @@ def run_iterative(
     checkpoint_every: int = 5,
     re_emergence_checks: list[int] | None = None,
     subset: str = "all",
+    schedule: str = "uniform",
 ) -> list[dict[str, Any]]:
     """Run one unlearning method over sequential forget steps.
+
+    schedule='uniform' iterates forget_step_N (fixed batch sizes, ordinal-safe);
+    schedule='poisson' iterates forget_step_poisson_N (variable batch sizes,
+    seeded single schedule — the GDPR-arrival stress test).  All analysis is
+    keyed on cumulative_forgotten (Shen et al. 2025), never raw step index.
 
     Returns list of per-step result dicts.
     """
@@ -168,6 +180,17 @@ def run_iterative(
         n_steps = csv_steps
         logger.info(f"  [infer] forget schedule from CSV: {n_steps} steps x {csv_per_step} ids")
 
+    # Guard: Poisson schedule requires the column (balanced-only).
+    if schedule == "poisson":
+        import pandas as pd
+        cols = pd.read_csv(csv_path, nrows=0).columns
+        if "forget_step_poisson" not in cols:
+            raise ValueError(
+                "schedule='poisson' requires a 'forget_step_poisson' column, "
+                "but the CSV has none. The Poisson schedule is balanced-only "
+                "— the imbalanced CSV has no time axis."
+            )
+
     device = resolve_device(device_str)
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -181,14 +204,17 @@ def run_iterative(
     current_model = copy_model(original_model, device)
 
     logger.info(f"\n{'─'*65}")
-    logger.info(f"  Iterative: {method_name.upper()} | {n_steps} steps | {mode}")
+    logger.info(f"  Iterative: {method_name.upper()} | {n_steps} steps | {mode} | schedule={schedule}")
     logger.info(f"{'─'*65}")
 
     # Baseline (step 0)
     logger.info(f"\n  [Step 0 / baseline] Evaluating original model…")
-    baseline = _step_eval(original_model, original_model, csv_path, device, forget_step=0, subset=subset)
+    baseline = _step_eval(original_model, original_model, csv_path, device,
+                          forget_step=0, subset=subset, schedule=schedule)
     baseline.update({
         "step": 0, "method": method_name, "mode": mode,
+        "schedule": schedule,
+        "cumulative_forgotten": 0,
         "step_time_s": 0.0, "cumulative_time_s": 0.0,
         "is_baseline": True,
     })
@@ -205,7 +231,7 @@ def run_iterative(
     step_identities: dict[int, set[int]] = {}
 
     for step in range(n_steps):
-        logger.info(f"\n  [Step {step+1}/{n_steps}] {method_name} | forget_step={step}")
+        logger.info(f"\n  [Step {step+1}/{n_steps}] {method_name} | {schedule} batch {step}")
         t0 = time.time()
 
         start_model = original_model if mode == "fresh" else current_model
@@ -226,13 +252,19 @@ def run_iterative(
 
             metrics = _step_eval(
                 current_model, original_model, csv_path, device,
-                forget_step=step, subset=subset,
+                forget_step=step, subset=subset, schedule=schedule,
             )
             record = {
                 "step": step + 1,
                 "forget_step_idx": step,
                 "method": method_name,
                 "mode": mode,
+                "schedule": schedule,
+                # Analysis axis per Shen et al. (2025): cumulative forgotten
+                # count, never raw step index (poisson batch sizes vary).
+                "cumulative_forgotten": cumulative_forgotten_count(
+                    csv_path, step, schedule=schedule,
+                ),
                 "step_time_s": round(step_time, 2),
                 "cumulative_time_s": round(cumulative_time, 2),
                 "is_baseline": False,
@@ -317,6 +349,7 @@ def run_all_iterative(
     checkpoint_every: int = 5,
     re_emergence_checks: list[int] | None = None,
     subset: str = "all",
+    schedule: str = "uniform",
 ) -> dict[str, list[dict[str, Any]]]:
     """Run iterative unlearning for all methods."""
     method_configs = load_method_configs(scale=scale)
@@ -339,7 +372,8 @@ def run_all_iterative(
 
     for method in methods:
         cfg = prepare_method_call(method_configs.get(method, {}),
-                                  identity_classes=n_id_classes)  # pins subset + classes
+                                  identity_classes=n_id_classes,
+                                  schedule=schedule)  # pins subset + classes + schedule
         records = run_iterative(
             method_name=method,
             method_cfg=cfg,
@@ -353,6 +387,7 @@ def run_all_iterative(
             checkpoint_every=checkpoint_every,
             re_emergence_checks=re_emergence_checks,
             subset=subset,
+            schedule=schedule,
         )
         all_results[method] = records
 
@@ -376,7 +411,8 @@ def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
 
 
 _FLAT_COLS = [
-    "step", "method", "mode", "retain_acc", "forget_acc",
+    "step", "method", "mode", "schedule", "cumulative_forgotten",
+    "retain_acc", "forget_acc",
     "step_forget_acc", "step_forget_train_acc",
     "retain_age_acc", "mia_mean_auc", "mia_max_auc", "forget_advantage",
     "model_drift", "step_time_s", "cumulative_time_s",
@@ -540,6 +576,11 @@ def main() -> None:
     parser.add_argument("--subset",            type=str, default="all",
                         choices=["all", "train", "holdout"],
                         help="Per-image subset filter (default: all)")
+    parser.add_argument("--schedule",          type=str, default="uniform",
+                        choices=["uniform", "poisson"],
+                        help="Forget schedule: 'uniform' (forget_step_N) or "
+                             "'poisson' (forget_step_poisson_N, GDPR-arrival "
+                             "stress test, balanced-only)")
     args = parser.parse_args()
 
     if args.n_seeds > 1:
@@ -560,6 +601,7 @@ def main() -> None:
                 checkpoint_every=args.checkpoint_every,
                 re_emergence_checks=args.re_emergence or None,
                 subset=args.subset,
+                schedule=args.schedule,
             )
         # After all seeds complete, aggregate into μ ± σ
         aggregate_iterative_seeds(args.out)
@@ -577,6 +619,7 @@ def main() -> None:
             checkpoint_every=args.checkpoint_every,
             re_emergence_checks=args.re_emergence or None,
             subset=args.subset,
+            schedule=args.schedule,
         )
 
 
