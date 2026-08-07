@@ -30,10 +30,12 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from torch.utils.data import DataLoader
 
 from config_loader import load_method_configs
+from dataset import VirtualIdentityDataset, get_val_transform
 from device_utils import resolve_device
-from evaluate import evaluate_full
+from evaluate import evaluate_full, evaluate_model
 from mia import (
     run_mia_full, run_mia_per_identity,
     print_per_identity_summary,
@@ -72,7 +74,17 @@ def _step_eval(
     forget_step: int,
     subset: str = "all",
 ) -> dict[str, Any]:
-    """Evaluate model after unlearning one forget step."""
+    """Evaluate model after unlearning one forget step.
+
+    Records cumulative metrics (over all forget identities seen so far)
+    plus step-local metrics (this step's identities only):
+      - step_forget_acc: forget identity accuracy on THIS step's holdout
+        images (subset='holdout').
+      - step_forget_train_acc: forget identity accuracy on THIS step's
+        train images — the overfitting-to-forgetting detector.  If the
+        method memorised the unlearning images, train acc drops to ~0
+        while holdout acc stays high.
+    """
     eval_res = evaluate_full(model, csv_path, device, verbose=False, subset=subset)
     per_id_mia = run_mia_per_identity(
         model, csv_path, device, head="identity",
@@ -81,15 +93,35 @@ def _step_eval(
     )
 
     r_acc = eval_res.get("retain", {}).get("identity", {}).get("accuracy", float("nan"))
-    te_acc = eval_res.get("test", {}).get("identity", {}).get("accuracy", float("nan"))
     f_acc = eval_res.get("forget", {}).get("identity", {}).get("accuracy", float("nan"))
     r_age = eval_res.get("retain", {}).get("age", {}).get("accuracy", float("nan"))
     drift = _weight_l2(model, original_model)
 
+    # Step-local forget accuracy (this step's identities only).
+    step_ds_hold = VirtualIdentityDataset(
+        csv_path, split=f"forget_step_{forget_step}",
+        transform=get_val_transform(), subset="holdout",
+    )
+    step_ds_train = VirtualIdentityDataset(
+        csv_path, split=f"forget_step_{forget_step}",
+        transform=get_val_transform(), subset="train",
+    )
+    step_forget_acc = float("nan")
+    step_forget_train_acc = float("nan")
+    if len(step_ds_hold) > 0:
+        loader = DataLoader(step_ds_hold, batch_size=128, shuffle=False,
+                            num_workers=0, pin_memory=True)
+        step_forget_acc = evaluate_model(model, loader, device)["identity"]["accuracy"]
+    if len(step_ds_train) > 0:
+        loader = DataLoader(step_ds_train, batch_size=128, shuffle=False,
+                            num_workers=0, pin_memory=True)
+        step_forget_train_acc = evaluate_model(model, loader, device)["identity"]["accuracy"]
+
     return {
         "retain_acc": round(r_acc, 4),
-        "test_acc": round(te_acc, 4),
         "forget_acc": round(f_acc, 4),
+        "step_forget_acc": round(float(step_forget_acc), 4),
+        "step_forget_train_acc": round(float(step_forget_train_acc), 4),
         "retain_age_acc": round(r_age, 4),
         "mia_mean_auc": per_id_mia.get("mean_auc", 0.5),
         "mia_max_auc": per_id_mia.get("max_auc", 0.5),
@@ -124,6 +156,17 @@ def run_iterative(
     """
     if re_emergence_checks is None:
         re_emergence_checks = [5, 10, 15]
+
+    # Infer the forget schedule (n_steps, identities per step) from the CSV
+    # so the protocol tracks the dataset (e.g. 15×4 today, 15×5 at 75 forget
+    # identities) instead of hardcoding.
+    from dataset import infer_forget_schedule
+    csv_steps, csv_per_step = infer_forget_schedule(csv_path)
+    if n_steps == 15 and csv_steps != 15:
+        # 15 is the historical default; prefer the CSV's actual step count
+        # unless the caller explicitly requested a different n_steps.
+        n_steps = csv_steps
+        logger.info(f"  [infer] forget schedule from CSV: {n_steps} steps x {csv_per_step} ids")
 
     device = resolve_device(device_str)
     out_path = Path(out_dir)
@@ -288,8 +331,15 @@ def run_all_iterative(
     out_path.mkdir(parents=True, exist_ok=True)
     all_results: dict[str, list[dict[str, Any]]] = {}
 
+    # Infer identity classes from CSV once — fresh-head methods
+    # (retrain oracle, SRL) need it to track the dataset size.
+    from dataset import infer_identity_classes
+    n_id_classes = infer_identity_classes(csv_path)
+    logger.info(f"  Identity classes (inferred from CSV): {n_id_classes}")
+
     for method in methods:
-        cfg = prepare_method_call(method_configs.get(method, {}))  # pins subset="train"
+        cfg = prepare_method_call(method_configs.get(method, {}),
+                                  identity_classes=n_id_classes)  # pins subset + classes
         records = run_iterative(
             method_name=method,
             method_cfg=cfg,
@@ -326,7 +376,8 @@ def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
 
 
 _FLAT_COLS = [
-    "step", "method", "mode", "retain_acc", "test_acc", "forget_acc",
+    "step", "method", "mode", "retain_acc", "forget_acc",
+    "step_forget_acc", "step_forget_train_acc",
     "retain_age_acc", "mia_mean_auc", "mia_max_auc", "forget_advantage",
     "model_drift", "step_time_s", "cumulative_time_s",
     "is_baseline", "error", "type", "check_step", "forgotten_step",

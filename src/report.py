@@ -43,7 +43,6 @@ logger = logging.getLogger(__name__)
 METRIC_SPECS: list[tuple[str, str, bool, str]] = [
     ("retain_id_acc",        "Retain Id Acc",            False, ".4f"),
     ("retain_age_acc",       "Retain Age Acc",           False, ".4f"),
-    ("test_id_acc",          "Test Id Acc",              False, ".4f"),
     ("forget_id_acc",        "Forget Id Acc",            False, ".4f"),
     ("mia_mean_auc",         "MIA AUC (mean)",           True,  ".4f"),
     ("mia_max_auc",          "MIA AUC (max)",            True,  ".4f"),

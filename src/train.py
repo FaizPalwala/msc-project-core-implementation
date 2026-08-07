@@ -198,6 +198,13 @@ def train(
     device = resolve_device(device_str)
     logger.info(f"Device: {device} | Seed: {seed} | Epochs: {epochs}")
 
+    # Infer identity classes from the CSV (600 vs 750 identities) unless
+    # the caller explicitly overrode them.
+    from dataset import infer_identity_classes
+    if identity_classes == NUM_IDENTITY_CLASSES:
+        identity_classes = infer_identity_classes(csv_path)
+        logger.info(f"Identity classes (inferred from CSV): {identity_classes}")
+
     # ── Datasets ──────────────────────────────────────────────────────────
     full_train = VirtualIdentityDataset(
         csv_path, split="retain+forget", transform=get_train_transform(),
@@ -256,7 +263,7 @@ def train(
 
     header = (
         f"{'Epoch':>6} {'Loss':>9} {'IdAcc':>8} {'AgeAcc':>8} "
-        f"{'ValId':>8} {'ValAge':>8} {'TestId':>9} {'TestAge':>9} {'LR':>10}"
+        f"{'ValId':>8} {'ValAge':>8} {'HoldId':>9} {'HoldAge':>9} {'LR':>10}"
     )
     logger.info(f"\n{header}")
     logger.info("-" * 95)
@@ -277,8 +284,10 @@ def train(
             "train_age_acc": round(trn_age_acc, 4),
             "val_id_acc": round(val_res["id_acc"], 4),
             "val_age_acc": round(val_res["age_acc"], 4),
-            "test_id_acc": round(tst_res["id_acc"], 4),
-            "test_age_acc": round(tst_res["age_acc"], 4),
+            # Holdout = retain+forget holdout images (generalisation —
+            # the old identity-disjoint 'test' split no longer exists).
+            "holdout_id_acc": round(tst_res["id_acc"], 4),
+            "holdout_age_acc": round(tst_res["age_acc"], 4),
             "lr": round(lr_now, 6),
         }
         history.append(row)
@@ -311,8 +320,8 @@ def train(
         model, save_path / f"{run_name}_final.pt",
         metadata={
             "epochs": epochs,
-            "final_test_id_acc": tst_res["id_acc"],
-            "final_test_age_acc": tst_res["age_acc"],
+            "final_holdout_id_acc": tst_res["id_acc"],
+            "final_holdout_age_acc": tst_res["age_acc"],
             "seed": seed,
             "run_name": run_name,
         },

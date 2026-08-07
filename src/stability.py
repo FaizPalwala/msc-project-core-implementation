@@ -329,17 +329,24 @@ def plot_heatmap(df, out_dir: Path):
 
 
 def plot_radar(df, out_dir: Path):
-    metrics = ["retain_acc", "test_acc", "forget_quality", "mia_quality", "speed"]
+    metrics = ["retain_acc", "step_forget_quality", "forget_quality", "mia_quality", "speed"]
     max_step = df["step"].max()
     final = df[df["step"] == max_step].copy()
-    if "forget_advantage" in final.columns:
-        final["forget_quality"] = 1.0 - final["forget_advantage"].clip(0, 0.5) / 0.5
+    # forget_quality: 1.0 when forget acc is low (good) — normalised on the
+    # holdout forget accuracy (0 = still recognised, 1 = fully forgotten).
+    if "forget_acc" in final.columns:
+        final["forget_quality"] = (1.0 - final["forget_acc"].clip(0, 1)).fillna(0)
+    # step_forget_quality: step-local version — the current step's identities.
+    if "step_forget_acc" in final.columns:
+        final["step_forget_quality"] = (1.0 - final["step_forget_acc"].clip(0, 1)).fillna(0)
+    else:
+        final["step_forget_quality"] = final.get("forget_quality", 0)
     if "mia_mean_auc" in final.columns:
         final["mia_quality"] = 1.0 - (final["mia_mean_auc"] - 0.5).abs().clip(0, 0.5) / 0.5
     t_max = final["step_time_s"].max() if "step_time_s" in final.columns else 1
     final["speed"] = 1.0 - (final["step_time_s"] / max(t_max, 1)).clip(0, 1) if "step_time_s" in final.columns else 0
 
-    labels = ["Retain Acc", "Test Acc", "Forget\nQuality", "MIA\nQuality", "Speed"]
+    labels = ["Retain Acc", "Step-Forget", "Forget\nQuality", "MIA\nQuality", "Speed"]
     N = len(labels); angles = [n / N * 2 * math.pi for n in range(N)] + [0]
 
     fig, ax = plt.subplots(figsize=(8, 8), subplot_kw={"polar": True})
@@ -533,12 +540,64 @@ def plot_fraction_leaked(df: pd.DataFrame, out_dir: Path) -> None:
                   target_line=0.0, target_label="Zero leakage", ylim=(-0.02, 1.05))
 
 
+def plot_forget_train_gap(df: pd.DataFrame, out_dir: Path) -> None:
+    """Step-local forget-train vs forget-holdout gap over steps.
+
+    The gap is the overfitting-to-forgetting detector: if a method
+    memorised the unlearning images, forget acc on the TRAIN images of
+    the current step drops to ~0 while the HOLD-OUT acc stays high →
+    large positive gap.  A gap ≈ 0 means genuine identity-level erasure.
+    """
+    if "step_forget_acc" not in df.columns or "step_forget_train_acc" not in df.columns:
+        logger.info("  [SKIP] 15_forget_train_gap — step-local columns not found")
+        return
+    fig, ax = plt.subplots(figsize=(9, 5))
+    methods = sorted(df["method"].unique())
+    for method in methods:
+        sub = df[df["method"] == method].sort_values("step")
+        s = _style(method)
+        gap = sub["step_forget_train_acc"] - sub["step_forget_acc"]
+        ax.plot(sub["step"], gap,
+                color=s["color"], ls=s["ls"], marker=s["marker"],
+                label=s["label"], alpha=0.9)
+    ax.axhline(0.10, color="green", ls="--", lw=1.2, alpha=0.6,
+               label="gap ≤ 0.10 = genuine forgetting")
+    ax.axhline(0.15, color="red", ls="--", lw=1.2, alpha=0.5,
+               label="gap ≥ 0.15 = overfit to unlearning images")
+    ax.set_xlabel("Forget step")
+    ax.set_ylabel("Step forget-train acc − step forget-holdout acc")
+    ax.set_title("Forget-Train / Forget-Holdout Gap by Step\n(overfitting-to-forgetting detector)",
+                 fontweight="bold", pad=10)
+    ax.legend(loc="best", fontsize=9, ncol=2)
+    fig.tight_layout()
+    fig.savefig(out_dir / "15_forget_train_gap.png", bbox_inches="tight")
+    plt.close(fig)
+    logger.info("  Saved: 15_forget_train_gap.png")
+
+
+def plot_step_forget_acc(df: pd.DataFrame, out_dir: Path) -> None:
+    """Step-local forget accuracy (this step's identities only).
+
+    Unlike the cumulative forget_acc (which averages over ALL identities
+    forgotten so far), this curve shows the current step's 4 identities.
+    A method can't hide a failing step behind an improving cumulative
+    average.
+    """
+    if "step_forget_acc" not in df.columns:
+        logger.info("  [SKIP] 16_step_forget_acc — column not found")
+        return
+    _plot_vs_step(df, "step_forget_acc", "Step-Local Forget Identity Accuracy",
+                  "Step-Local Forgetting vs. Iteration",
+                  out_dir / "16_step_forget_acc.png",
+                  target_line=0.0, target_label="Perfect step forgetting")
+
+
 # ── Summary statistics ────────────────────────────────────────────────────────
 
 
 def compute_summary_stats(df: pd.DataFrame, out_dir: Path) -> None:
-    cols = ["retain_acc", "test_acc", "forget_advantage", "mia_mean_auc",
-            "model_drift", "step_time_s"]
+    cols = ["retain_acc", "forget_acc", "step_forget_acc", "step_forget_train_acc",
+            "forget_advantage", "mia_mean_auc", "model_drift", "step_time_s"]
     rows = []
     for method in sorted(df["method"].unique()):
         sub = df[df["method"] == method]
@@ -630,6 +689,10 @@ def run_stability_analysis(
     plot_demographic_heatmap(demog_csv, out_path)
     plot_phase_space(df, out_path)
     plot_fraction_leaked(df, out_path)
+
+    # Step-local curves (forget_step flow)
+    plot_step_forget_acc(df, out_path)
+    plot_forget_train_gap(df, out_path)
 
     compute_summary_stats(df, out_path)
     logger.info(f"\n[OK] All plots → {out_path}/")

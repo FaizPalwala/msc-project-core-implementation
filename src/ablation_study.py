@@ -80,7 +80,6 @@ def run_ablation(
         results[name] = {
             "retain_id_acc": ev.get("retain", {}).get("identity", {}).get("accuracy", 0),
             "retain_age_acc": ev.get("retain", {}).get("age", {}).get("accuracy", 0),
-            "test_id_acc": ev.get("test", {}).get("identity", {}).get("accuracy", 0),
             "forget_id_acc": ev.get("forget", {}).get("identity", {}).get("accuracy", 0),
             "mia_mean_auc": per_id.get("mean_auc", 0.5),
             "mia_max_auc": per_id.get("max_auc", 0.5),

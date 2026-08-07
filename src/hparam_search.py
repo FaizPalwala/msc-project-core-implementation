@@ -254,7 +254,6 @@ def run_trial(
         "config": cfg,
         "retain_id_acc":      round(retain_acc, 4),
         "retain_age_acc":     round(eval_res.get("retain", {}).get("age", {}).get("accuracy", 0.0), 4),
-        "test_id_acc":        round(eval_res.get("test", {}).get("identity", {}).get("accuracy", 0.0), 4),
         "forget_id_acc":      round(eval_res.get("forget", {}).get("identity", {}).get("accuracy", 0.0), 4),
         "mia_mean_auc":       per_id.get("mean_auc", 0.5),
         "mia_max_auc":        per_id.get("max_auc", 0.5),

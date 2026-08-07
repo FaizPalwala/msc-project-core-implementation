@@ -97,6 +97,12 @@ def run_single_shot(
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
+    # Infer identity classes from the CSV so the pipeline tracks the
+    # dataset (600 vs 750 identities) instead of hardcoding.
+    from dataset import infer_identity_classes
+    n_id_classes = infer_identity_classes(csv_path)
+    logger.info(f"  Identity classes (inferred from CSV): {n_id_classes}")
+
     original_model = load_model(model_path, device=str(device))
     all_results: dict[str, Any] = {}
 
@@ -117,7 +123,7 @@ def run_single_shot(
         logger.info(f"{'─'*60}")
 
         cfg = method_configs.get(method_name, {})
-        cfg = prepare_method_call(cfg)   # pins subset="train" (never see holdout)
+        cfg = prepare_method_call(cfg, identity_classes=n_id_classes)
         t0 = time.time()
 
         try:
@@ -193,8 +199,12 @@ def run_single_shot(
                 "method_metrics": method_metrics,
                 "evaluation": _clean_eval(eval_res),
                 "evaluation_train": _clean_eval(eval_train),  # forget-train gap
+                # Scalar aggregates only for per_identity_mia (drop nested
+                # per-identity dicts); the per-identity AUC map is stored
+                # separately for the CSV export / plot 10.
                 "per_identity_mia": {str(k): v for k, v in per_id_mia.items()
                                      if not isinstance(v, dict)},
+                "per_identity_auc": per_id_mia.get("per_identity_auc", {}),
                 "max_confidence_attack": max_conf,
                 "demographic_mia": demog_mia,
                 "demographic_eval": demog_eval,
@@ -229,7 +239,7 @@ _AGGREGATABLE_KEYS: set[str] = {
     "mia_mean_auc", "mia_max_auc", "mia_std_auc", "mia_fraction_leaked",
     "max_conf_auc", "max_confidence_auc", "forget_advantage", "fraction_leaked",
     "probe_identity_acc", "probe_age_acc", "probe_gender_acc",
-    "retain_id_acc", "retain_age_acc", "test_id_acc", "forget_id_acc",
+    "retain_id_acc", "retain_age_acc", "forget_id_acc",
     "total_time_s",
 }
 
@@ -364,7 +374,6 @@ def _flatten_metrics(data: dict) -> dict[str, Any]:
 
     flat["retain_id_acc"] = ev.get("retain", {}).get("identity", {}).get("accuracy")
     flat["retain_age_acc"] = ev.get("retain", {}).get("age", {}).get("accuracy")
-    flat["test_id_acc"] = ev.get("test", {}).get("identity", {}).get("accuracy")
     flat["forget_id_acc"] = ev.get("forget", {}).get("identity", {}).get("accuracy")
     flat["forget_train_id_acc"] = ev_train.get("forget", {}).get("identity", {}).get("accuracy")
     flat["mia_mean_auc"] = per_id.get("mean_auc")
@@ -480,7 +489,7 @@ def _bootstrap_oracle_comparison(
         "mia_fraction_leaked", "max_conf_auc",
         "probe_identity_acc", "probe_age_acc", "probe_gender_acc",
     }
-    lower_is_worse = {"retain_id_acc", "retain_age_acc", "test_id_acc", "forget_id_acc"}
+    lower_is_worse = {"retain_id_acc", "retain_age_acc", "forget_id_acc"}
 
     rng = np.random.RandomState(42)
     p_values: dict[str, dict[str, float]] = {}
@@ -534,7 +543,7 @@ def _clean_eval(eval_res: dict) -> dict:
 def _print_table(results: dict[str, Any]) -> None:
     """Print formatted comparison table."""
     header = (
-        f"\n{'Method':<16} {'IdAcc-Ret':>10} {'IdAcc-Test':>10} "
+        f"\n{'Method':<16} {'IdAcc-Ret':>10} {'FgTr-Gap':>10} "
         f"{'MIA-F:Id':>9} {'F-Adv':>7} {'MaxConfAUC':>11} "
         f"{'Probe-Id':>9} {'Time(s)':>8}"
     )
@@ -549,13 +558,16 @@ def _print_table(results: dict[str, Any]) -> None:
             logger.info(f"{METHOD_DISPLAY.get(method, method):<16}  ERROR: {data['error']}")
             continue
         ev  = data.get("evaluation", {})
+        ev_train = data.get("evaluation_train", {})
         per_id = data.get("per_identity_mia", {})
         max_c = data.get("max_confidence_attack", {})
         probes = data.get("probes", {})
         t = data.get("total_time_s", 0)
 
         r_id_acc = ev.get("retain", {}).get("identity", {}).get("accuracy", float("nan"))
-        t_id_acc = ev.get("test", {}).get("identity", {}).get("accuracy", float("nan"))
+        fg_hold = ev.get("forget", {}).get("identity", {}).get("accuracy", float("nan"))
+        fg_train = ev_train.get("forget", {}).get("identity", {}).get("accuracy", float("nan"))
+        fg_gap = (fg_train - fg_hold) if isinstance(fg_train, float) and not np.isnan(fg_train) else float("nan")
         mia_auc = per_id.get("mean_auc", float("nan"))
         f_adv = per_id.get("mean_forget_advantage",
                            abs(float(mia_auc) - 0.5) if isinstance(mia_auc, float) else float("nan"))
@@ -564,7 +576,7 @@ def _print_table(results: dict[str, Any]) -> None:
 
         logger.info(
             f"{METHOD_DISPLAY.get(method, method):<16} "
-            f"{r_id_acc:>10.4f} {t_id_acc:>10.4f} "
+            f"{r_id_acc:>10.4f} {fg_gap:>10.4f} "
             f"{mia_auc:>9.4f} {f_adv:>7.4f} {max_auc:>11.4f} "
             f"{probe_id:>9.4f} {t:>8.1f}"
         )
@@ -573,6 +585,7 @@ def _print_table(results: dict[str, Any]) -> None:
     logger.info("  MIA-F:Id = per-identity mean MIA AUC (identity head)")
     logger.info("  MaxConfAUC = worst-case single-image attack")
     logger.info("  Probe-Id = identity probe accuracy (target: near 0%)")
+    logger.info("  FgTr-Gap = forget-train acc − forget-holdout acc (≤0.10 = genuine forgetting)")
     logger.info("=" * 90)
 
 
@@ -593,7 +606,6 @@ def _save_csv(results: dict, out_path: Path) -> None:
             "method": METHOD_DISPLAY.get(method, method),
             "retain_id_acc": ev.get("retain", {}).get("identity", {}).get("accuracy", ""),
             "retain_age_acc": ev.get("retain", {}).get("age", {}).get("accuracy", ""),
-            "test_id_acc": ev.get("test", {}).get("identity", {}).get("accuracy", ""),
             "forget_id_acc": ev.get("forget", {}).get("identity", {}).get("accuracy", ""),
             "mia_mean_auc": per_id.get("mean_auc", ""),
             "mia_std_auc": per_id.get("std_auc", ""),
@@ -611,6 +623,49 @@ def _save_csv(results: dict, out_path: Path) -> None:
         writer.writeheader()
         writer.writerows(rows)
     logger.info(f"[OK] CSV → {csv_path}")
+
+    # Per-identity MIA AUC export (feeds stability plot 10_identity_signatures).
+    # Columns: method, identity_id, mia_auc
+    per_id_rows = []
+    for method, data in results.items():
+        if "error" in data:
+            continue
+        auc_map = data.get("per_identity_auc", {})
+        for cid, auc in auc_map.items():
+            per_id_rows.append({
+                "method": METHOD_DISPLAY.get(method, method),
+                "identity_id": cid,
+                "mia_auc": auc,
+            })
+    if per_id_rows:
+        per_id_path = out_path / "single_shot_per_identity.csv"
+        with open(per_id_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["method", "identity_id", "mia_auc"])
+            writer.writeheader()
+            writer.writerows(per_id_rows)
+        logger.info(f"[OK] Per-identity CSV → {per_id_path}")
+
+    # Demographic MIA export (feeds stability plot 11_demographic_heatmap).
+    # Columns: method, demographic_group, mia_auc
+    demog_rows = []
+    for method, data in results.items():
+        if "error" in data:
+            continue
+        demog = data.get("demographic_mia", {})
+        for group_key, group_res in demog.items():
+            if isinstance(group_res, dict) and "auc" in group_res:
+                demog_rows.append({
+                    "method": METHOD_DISPLAY.get(method, method),
+                    "demographic_group": group_key,
+                    "mia_auc": group_res["auc"],
+                })
+    if demog_rows:
+        demog_path = out_path / "single_shot_demographic.csv"
+        with open(demog_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["method", "demographic_group", "mia_auc"])
+            writer.writeheader()
+            writer.writerows(demog_rows)
+        logger.info(f"[OK] Demographic CSV → {demog_path}")
 
 
 def main() -> None:
