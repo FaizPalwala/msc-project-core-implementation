@@ -30,15 +30,19 @@ ResNet-18 backbone (ImageNet-pretrained, 224×224)
 
 | Property | Balanced | Imbalanced |
 |----------|----------|------------|
-| Identities | 600 | 600 |
-| Images/ID | 75 | 85:40:20 gradient |
-| Total images | 45,000 | ~19,500 |
-| Split | 450 retain / 90 test / 60 forget | Same IDs, pruned |
-| Forget protocol | 15 steps × 4 IDs | Same |
+| Identities | 750 | 750 |
+| Images/ID | 90 (72 train / 18 holdout) | 82:41:16 train gradient (5:1) |
+| Total images | 67,500 | ~36,075 |
+| Split | 675 retain / 75 forget | Same IDs, pruned |
+| Forget protocol | 15 steps × 5 IDs (uniform + seeded-Poisson schedules) | Single-shot (no time axis — the popularity gradient IS the axis) |
 
-### Schema 
+### Schema
 
-Balanced — `dataset.csv` / `dataset.parquet` (11 columns):
+**v1.1 (750-id redesign)** — both artifacts carry 12 columns but different
+column sets.  Identity classes, forget-step count and per-step sizes are
+inferred from the CSV at runtime (no hardcoding — see `dataset.py`).
+
+Balanced — `dataset.csv` / `dataset.parquet` (12 columns):
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -47,15 +51,18 @@ Balanced — `dataset.csv` / `dataset.parquet` (11 columns):
 | `age_group` | int (0–3) | age-label for the age head |
 | `age` | int | raw age estimate |
 | `gender` | int (0/1) | confound control / fairness analysis |
-| `split` | string | `retain` / `test` / `forget` |
-| `forget_step` | int | −1 for non-forget rows |
-| `forget_variant` | int | −1 for non-forget rows |
+| `split` | string | `retain` / `forget` (no `test` — every identity is one or the other) |
+| `forget_step` | int | uniform schedule, −1 = retain (5 ids/step × 15) |
+| `forget_step_poisson` | int | seeded-Poisson schedule (λ=5, variable batches), −1 = retain |
+| `image_subset` | string | `train` / `holdout` (per-identity split) |
 | `arcface_similarity` | float | within-identity outlier confound control |
 | `laplacian_variance` | float | image-quality confound |
 | `detection_confidence` | float | alignment quality |
 
-Imbalanced — `dataset_imbalanced.csv` / `.parquet`: same 11 + `popularity_bin`
-(string) + `images_per_identity` (int) = 13 columns.
+Imbalanced — `dataset_imbalanced.csv` / `.parquet` (12 columns): same minus
+the two schedule columns, plus `popularity_bin` (high/medium/low) +
+`images_per_identity` (82/41/16).  The imbalanced artifact has **no time
+axis** — its experimental axis is the popularity gradient.
 
 File format (CSV or Parquet) is auto-detected from the extension.
 
@@ -64,22 +71,24 @@ File format (CSV or Parquet) is auto-detected from the extension.
 ## Pipeline Stages
 
 ```
-train → single_shot → iterative → stability ──┐
-  │          │                                 │
-  │          └→ hparam (parallel) → iterative  │
-  │                                            │
-  └──→ canary (independent) ───────────────────┴──→ report
+train → single_shot → (imbalanced: equity plots) → hparam → iterative → stability ──┐
+  │          │                                                                    │
+  └──→ canary (independent) ────────────────────────────────────────────────────┴──→ report
 ```
 
 | Stage | Script | Description | Parallel? |
 |-------|--------|-------------|-----------|
-| Train | `train.py` | Train original model M on retain+forget | — |
-| Single-shot | `single_shot.py` | All methods, all 60 forget IDs, complete eval | After train |
+| Train | `train.py` | Train original model M on retain+forget (train subset) | — |
+| Single-shot | `single_shot.py` | All methods, all forget IDs, complete eval + per-identity/demographic CSVs | After train |
+| Equity plots | `imbalanced_plots.py` | 6 per-bin equity plots + Kruskal-Wallis (imbalanced only) | After single-shot |
 | HP search | `hparam_search.py` | Grid/random search, UF-score ranking | Parallel with single-shot |
-| Iterative | `iterative.py` | 15 step × 4 ID, cumulative + fresh, re-emergence | After best configs |
-| Stability | `stability.py` | 13 publication-quality plots | After iterative |
+| Iterative | `iterative.py` | Schedule protocol (uniform 5×15, or Poisson), cumulative + fresh, re-emergence, `--order_seed` for order-stability | After best configs |
+| Stability | `stability.py` | 16 publication-quality plots | After iterative |
 | Canary | `canary.py` | Pixel-level ground-truth deletion proof | Independent |
 | Report | `report.py` | LaTeX/Markdown synthesis of all results | After stability + canary |
+
+The imbalanced chain skips iterative + stability (no `forget_step` to
+iterate over — its axis is the popularity gradient, not time).
 
 ## Quick Start
 
@@ -146,13 +155,16 @@ Five-tier evaluation referenced to:
 
 | Metric | Head | Target | Reported |
 |--------|------|--------|----------|
-| Identity accuracy (retain/test) | Identity | High, stable | Per-split, per-step |
-| Age accuracy (retain/test) | Age | High, stable | Per-split, per-step |
+| Identity accuracy (retain-holdout) | Identity | High, stable | Per-split, per-step |
+| Age accuracy (retain-holdout) | Age | High, stable | Per-split, per-step |
+| Forget identity accuracy (holdout) | Identity | → 0 (erased) | Per-split, per-step |
+| Forget-train gap (train − holdout) | Identity | ≤ 0.10 | Per-method (FgTr-Gap column) |
+| Step-local forget acc (this step's IDs) | Identity | → 0 | Per-step |
 | MIA AUC (mean ± std per identity) | Identity | 0.50 ± 0.05 | Per-method, per-step |
 | Max per-identity MIA AUC | Identity | < 0.55 | Per-method |
 | Max single-image confidence | Identity | Low | Per-method |
 | Fraction leaked (AUC > 0.55) | Identity | 0.00 | Per-method, per-step |
-| Identity probe accuracy | 512-d features | ≈ chance (0.17%) | Per-method |
+| Identity probe accuracy | 512-d features | ≈ chance | Per-method |
 | Age probe accuracy | 512-d features | Comparison metric | Per-method |
 | Gender probe accuracy | 512-d features | Fairness metric | Per-method |
 | Model drift (L2) | Backbone | Controlled growth | Per-step |
@@ -160,6 +172,12 @@ Five-tier evaluation referenced to:
 | Re-emergence rate | Identity | 0.00 | Cumulative checkpoints |
 | MIA AUC by age group | Identity | Uniform across groups | Per-method |
 | MIA AUC by popularity bin | Identity | Uniform across bins | Per-method (imbalanced) |
+
+Note: identity accuracy is reported on **holdout** images (never seen during
+unlearning — the subset leak fix enforces this at the dataset layer).  The
+old identity-disjoint `test` split is gone: every identity is retain or
+forget, each with train/holdout image subsets.  See `METRICS_GUIDE.md` for
+the full interpretation guide with citations.
 
 ## Config Structure
 
@@ -187,4 +205,13 @@ Golatkar et al. (2020) — Eternal Sunshine of the Spotless Net. CVPR 2020.
 Carlini et al. (2022) — Membership Inference Attacks From First Principles. IEEE S&P.
 Thudi et al. (2022) — Unrolling SGD: Understanding Limits of Machine Unlearning.
 Yeom et al. (2018) — Privacy Risk in Machine Learning. IEEE CSF.
+Ginart et al. (2019) — Making AI Forget You: Data Deletion in Machine Learning. arXiv:1907.05012.
+Bourtoule et al. (2021) — Machine Unlearning. IEEE S&P. (retrain-oracle gold standard)
+Shen et al. (2025) — Machine Unlearning for Streaming Forgetting. arXiv:2507.15280.
+Online Forgetting Process — arXiv:2012.01668. (Poisson arrival model)
+Yu et al. (2026) — Forgetting-aware Loss Reweighting for Long-tailed Unlearning (FaLW). arXiv:2601.18650.
+GENIU — arXiv:2406.07885. (class-level imbalance unlearning)
+CUFG — arXiv:2509.14633. (ordered vs random forgetting)
+Cao et al. (2018) — VGG-Face2. (5:1 popularity gradient calibration)
+Liu et al. (2019) — Large-Scale Long-Tailed Recognition. CVPR. (long-tail justification)
 ```

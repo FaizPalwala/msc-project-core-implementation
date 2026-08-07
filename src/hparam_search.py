@@ -5,7 +5,7 @@ Implements two search strategies:
   GridSearch   — exhaustive Cartesian product over discrete param grids
   RandomSearch — uniform/log-uniform sampling over continuous param ranges
 
-After each trial the model is evaluated on retain, test, and forget splits
+After each trial the model is evaluated on retain and forget splits
 and a scalar utility-forgetting score (UF-score) is computed:
 
     UF = w_r * retain_acc  +  w_f * (1 - forget_advantage)  -  w_p * time

@@ -1,7 +1,7 @@
 """
 single_shot.py — Single-shot unlearning evaluation (combined forget set).
 
-Runs ALL methods on the full forget split (all 60 identities at once),
+Runs ALL methods on the full forget split (all forget identities at once),
 evaluates with the five-tier framework, and saves per-method results.
 
 Usage:

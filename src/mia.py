@@ -198,7 +198,7 @@ def run_mia_full(
     verbose: bool = True,
     subset: str = "all",
 ) -> dict[str, Any]:
-    """Run MIA on full forget set (all 60 identities)."""
+    """Run MIA on full forget set (all forget identities)."""
     retain_loader, test_loader, forget_loader = _build_loaders(
         csv_path, batch_size, subset=subset)
 
