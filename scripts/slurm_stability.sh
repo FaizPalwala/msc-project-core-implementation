@@ -8,7 +8,9 @@
 #SBATCH --time=01:00:00
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=4G
-# Usage: sbatch scripts/slurm_stability.sh <combined_csv> <out_dir>
+# Usage:
+#   sbatch scripts/slurm_stability.sh <combined_csv> <out_dir> [per_id_csv] [demog_csv]
+#   (per_id_csv/demog_csv optional — activate plots 10/11 when present)
 
 # ── Repo root ────────────────────────────────────────────────────────────
 # Under sbatch, $0 points at the spool copy (/var/spool/slurmd/...), so
@@ -35,10 +37,16 @@ LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 COMBINED="${1:-$PROJECT_DIR/results/iterative/iterative_combined_aggregated.csv}"
 OUT="${2:-$PROJECT_DIR/results/iterative/plots}"
+PER_ID="${3:-}"
+DEMOG="${4:-}"
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Stability plots → $OUT"
 
-python src/stability.py --combined "$COMBINED" --out "$OUT" 2>&1
+ARGS="--combined $COMBINED --out $OUT"
+[ -n "$PER_ID" ] && ARGS="$ARGS --per_id_csv $PER_ID"
+[ -n "$DEMOG" ] && ARGS="$ARGS --demog_csv $DEMOG"
+
+python src/stability.py $ARGS 2>&1
 
 echo "[$(date)] Stability plots complete."
