@@ -37,19 +37,24 @@ class UnlearningResult(TypedDict, total=False):
 REQUIRED_KEYS = ("model", "method", "metrics")
 
 
-def prepare_method_call(cfg: dict) -> dict:
-    """Pin ``subset='train'`` on an unlearning-method config.
+def prepare_method_call(cfg: dict, identity_classes: int | None = None) -> dict:
+    """Pin run-invariant config on an unlearning-method config.
 
-    Unlearning methods must never see holdout images — the holdout is
-    reserved for post-unlearning evaluation.  All runners (single_shot,
-    iterative, hparam_search, ablation_study) must build method configs
-    through this helper so the pin cannot be forgotten.
+    Pins:
+      - ``subset='train'`` — unlearning methods must never see holdout
+        images; the holdout is reserved for post-unlearning evaluation.
+      - ``identity_classes`` (if given) — inferred from the CSV so methods
+        that build fresh heads (retrain oracle, SRL relabelling) track the
+        dataset size instead of hardcoding 600.
 
-    ``subset`` is injected into the config dict, which methods receive via
-    ``**cfg`` and forward to their dataset construction.
+    All runners (single_shot, iterative, hparam_search, ablation_study)
+    must build method configs through this helper so the pins cannot be
+    forgotten.
     """
     out = dict(cfg)
     out["subset"] = "train"
+    if identity_classes is not None:
+        out["identity_classes"] = identity_classes
     return out
 
 

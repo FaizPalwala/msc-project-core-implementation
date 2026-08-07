@@ -50,6 +50,9 @@ from torchvision import transforms as T
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
+# These are FALLBACKS only.  Callers that know the CSV path should use
+# infer_identity_classes(csv) / infer_forget_schedule(csv) so the counts
+# track the dataset (e.g. 600 vs 750 identities) instead of hardcoding.
 NUM_IDENTITY_CLASSES = 600
 NUM_AGE_CLASSES      =   4
 
@@ -60,6 +63,42 @@ AGE_GROUP_NAMES: dict[int, str] = {
 # ImageNet normalisation (matching pretrained ResNet-18 weights)
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD  = [0.229, 0.224, 0.225]
+
+
+# ── Dataset metadata inference ────────────────────────────────────────────────
+
+
+def infer_identity_classes(csv_path: str | Path) -> int:
+    """Number of distinct identity classes in the dataset.
+
+    Reads only the CSV header + identity_id column (fast) and returns
+    nunique(identity_id).  This replaces the hardcoded 600 so the
+    pipeline adapts to dataset iterations (e.g. 750 identities).
+    """
+    import pandas as pd
+    df = pd.read_csv(csv_path, usecols=["identity_id"])
+    return int(df["identity_id"].nunique())
+
+
+def infer_forget_schedule(csv_path: str | Path) -> tuple[int, int]:
+    """(n_forget_steps, identities_per_step) from the forget split.
+
+    Reads the forget_step column of the forget split and returns the
+    number of distinct steps and the (modal) identities per step.
+    Falls back to (15, 4) if the column is missing.
+    """
+    import pandas as pd
+    df = pd.read_csv(csv_path, usecols=["split", "identity_id", "forget_step"])
+    fg = df[df["split"] == "forget"]
+    if "forget_step" not in fg.columns or fg["forget_step"].isna().all():
+        return 15, 4
+    steps = sorted(fg["forget_step"].dropna().unique())
+    n_steps = len(steps)
+    if n_steps == 0:
+        return 15, 4
+    counts = fg.groupby("forget_step")["identity_id"].nunique()
+    per_step = int(counts.mode().iloc[0]) if len(counts) else 4
+    return n_steps, per_step
 
 # ── Transforms ────────────────────────────────────────────────────────────────
 
