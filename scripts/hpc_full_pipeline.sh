@@ -71,15 +71,35 @@ if [ "$DATASET" = "imbalanced" ]; then
     echo "  Imbalanced plots job: $IMBPLOT_JOB"
 fi
 
-# HP search parallel to single-shot (can run concurrently)
-echo "[$(date)] Submitting HP search (dependency: $TRAIN_JOB)…"
-HP_JOB=$(sbatch --parsable \
-    --dependency=afterok:$TRAIN_JOB \
-    "$PROJECT_DIR/scripts/slurm_hparam.sh" \
-    "$CSV" "$MODEL" "$OUT/hparam")
-echo "  HP search job: $HP_JOB"
+# ── HP search: ONE job per method, ALL in parallel ──────────────────────
+# Each job writes its own {method}_best_config.json (no shared-file races).
+# HP_METHODS overrides the default set (methods with grids defined in
+# hparam_search.GRIDS; no_unlearning/retrain have no tunable params).
+HP_METHODS="${HP_METHODS:-ng_plus msg ct msg_kd adaptiformet ga srl ft}"
+HP_DEPS=""
+echo "[$(date)] Submitting HP search — one job per method, in parallel…"
+for M in $HP_METHODS; do
+    HPJ=$(sbatch --parsable \
+        --dependency=afterok:$TRAIN_JOB \
+        "$PROJECT_DIR/scripts/slurm_hparam.sh" \
+        "$CSV" "$MODEL" "$OUT/hparam" "$M" "grid")
+    echo "  HP($M) job: $HPJ"
+    HP_DEPS="$HP_DEPS:$HPJ"
+done
+HP_DEPS="${HP_DEPS#:}"
 
-# ── Stage 3: Iterative (after single-shot, uses best configs) ───────────
+# ── Stage 2b: Single-shot with BEST configs (after all HP jobs) ─────────
+# The user's compare-and-contrast: default-config single-shot (above) vs
+# tuned single-shot.  Both feed the report; iterative uses the tuned set.
+BEST_DIR="$OUT/hparam"
+echo "[$(date)] Submitting single-shot-best (dependency: all HP jobs)…"
+SINGLE_BEST_JOB=$(sbatch --parsable \
+    --dependency=afterok:$HP_DEPS \
+    "$PROJECT_DIR/scripts/slurm_single_shot.sh" \
+    "$CSV" "$MODEL" "$OUT/single_shot_best" "$BEST_DIR")
+echo "  Single-shot-best job: $SINGLE_BEST_JOB"
+
+# ── Stage 3: Iterative (after single-shot + HP, uses best configs) ──────
 # Balanced only — imbalanced has no forget_step schedule to iterate over
 # (its experimental axis is the popularity gradient, not time).
 # ITER_SCHEDULE=poisson runs the seeded-Poisson stress test instead of the
@@ -89,11 +109,11 @@ ITER_SCHEDULE="${ITER_SCHEDULE:-uniform}"
 ITER_SUBDIR="iterative"
 [ "$ITER_SCHEDULE" = "poisson" ] && ITER_SUBDIR="iterative_poisson"
 if [ "$DATASET" = "balanced" ]; then
-    echo "[$(date)] Submitting iterative ($ITER_SCHEDULE; dependency: $SINGLE_JOB:$HP_JOB)…"
+    echo "[$(date)] Submitting iterative ($ITER_SCHEDULE; dependency: $SINGLE_JOB:$HP_DEPS)…"
     ITER_JOB=$(sbatch --parsable \
-        --dependency=afterok:$SINGLE_JOB:$HP_JOB \
+        --dependency=afterok:$SINGLE_JOB:$HP_DEPS \
         "$PROJECT_DIR/scripts/slurm_iterative.sh" \
-        "$CSV" "$MODEL" "$OUT/$ITER_SUBDIR" "$ITER_SCHEDULE")
+        "$CSV" "$MODEL" "$OUT/$ITER_SUBDIR" "$ITER_SCHEDULE" "$BEST_DIR")
     echo "  Iterative job: $ITER_JOB"
 
     # ── Stage 4: Stability plots (after iterative) ──────────────────────
@@ -120,8 +140,8 @@ CANARY_JOB=$(sbatch --parsable \
     "$CSV" "$OUT/canary")
 echo "  Canary job: $CANARY_JOB"
 
-# ── Stage 6: Report (after stability + canary; stability only for balanced) ──
-REPORT_DEPS="$CANARY_JOB"
+# ── Stage 6: Report (after stability + single_shot_best + canary) ───────
+REPORT_DEPS="$CANARY_JOB:$SINGLE_BEST_JOB"
 [ -n "$STAB_JOB" ] && REPORT_DEPS="$STAB_JOB:$REPORT_DEPS"
 echo "[$(date)] Submitting report (dependency: $REPORT_DEPS)…"
 REPORT_JOB=$(sbatch --parsable \
@@ -136,4 +156,4 @@ echo "  Dataset: $DATASET ($CSV)"
 echo "  Results: $OUT"
 echo "  Logs:    logs/unlearn_*_*.out (match by job IDs below)"
 echo "  Monitor: squeue -u \$USER"
-echo "  Job IDs: train=$TRAIN_JOB single=$SINGLE_JOB hp=$HP_JOB iter=$ITER_JOB stab=$STAB_JOB canary=$CANARY_JOB report=$REPORT_JOB"
+echo "  Job IDs: train=$TRAIN_JOB single=$SINGLE_JOB single_best=$SINGLE_BEST_JOB hp=[$HP_METHODS] iter=$ITER_JOB stab=$STAB_JOB canary=$CANARY_JOB report=$REPORT_JOB"

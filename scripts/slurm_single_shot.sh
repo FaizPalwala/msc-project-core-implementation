@@ -10,7 +10,10 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-# Usage: sbatch scripts/slurm_single_shot.sh <csv> <model> <out>
+# Usage: sbatch scripts/slurm_single_shot.sh <csv> <model> <out> [best_configs_dir]
+#   best_configs_dir: optional dir of hparam *_best_config.json — tuned
+#   per-method values override YAML defaults (the "single-shot with best
+#   params after HP search" stage).
 
 # ── Repo root ────────────────────────────────────────────────────────────
 # Under sbatch, $0 points at the spool copy (/var/spool/slurmd/...), so
@@ -41,6 +44,7 @@ mkdir -p "$LOG_DIR"
 CSV="${1:-$CSV_DEFAULT}"
 MODEL="${2:-$OUT_BASE/checkpoints/original_model_best.pt}"
 OUT="${3:-$OUT_BASE/single_shot}"
+BEST="${4:-}"
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Single-shot eval → $OUT"
@@ -48,8 +52,14 @@ echo "[$(date)] Single-shot eval → $OUT"
 # GPU preflight
 bash "$PROJECT_DIR/scripts/gpu_preflight.sh" || exit 1
 
-python src/single_shot.py \
-    --csv "$CSV" --model "$MODEL" --out "$OUT" \
-    --seed 42 --scale 1.0 2>&1
+if [ -n "$BEST" ]; then
+    python src/single_shot.py \
+        --csv "$CSV" --model "$MODEL" --out "$OUT" \
+        --seed 42 --scale 1.0 --best_configs "$BEST" 2>&1
+else
+    python src/single_shot.py \
+        --csv "$CSV" --model "$MODEL" --out "$OUT" \
+        --seed 42 --scale 1.0 2>&1
+fi
 
 echo "[$(date)] Single-shot complete."

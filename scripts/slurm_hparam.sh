@@ -10,7 +10,11 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-# Usage: sbatch scripts/slurm_hparam.sh <csv> <model> <out>
+# Usage: sbatch scripts/slurm_hparam.sh <csv> <model> <out> [method] [search]
+#   method: which method to search (default ng_plus).  Submit ONE job per
+#           method in parallel — each writes its own *_best_config.json so
+#           the per-method jobs never race.
+#   search: grid (default) | random
 
 # ── Repo root ────────────────────────────────────────────────────────────
 # Under sbatch, $0 points at the spool copy (/var/spool/slurmd/...), so
@@ -41,15 +45,17 @@ mkdir -p "$LOG_DIR"
 CSV="${1:-$CSV_DEFAULT}"
 MODEL="${2:-$OUT_BASE/checkpoints/original_model_best.pt}"
 OUT="${3:-$OUT_BASE/hparam}"
+METHOD="${4:-ng_plus}"
+SEARCH="${5:-grid}"
 
 cd "$PROJECT_DIR"
-echo "[$(date)] HP search → $OUT"
+echo "[$(date)] HP search ($METHOD, $SEARCH) → $OUT"
 
 # GPU preflight
 bash "$PROJECT_DIR/scripts/gpu_preflight.sh" || exit 1
 
 python src/hparam_search.py \
     --csv "$CSV" --model "$MODEL" --out "$OUT" \
-    --method ng_plus --search grid --seed 42 2>&1
+    --method "$METHOD" --search "$SEARCH" --seed 42 2>&1
 
-echo "[$(date)] HP search complete."
+echo "[$(date)] HP search ($METHOD) complete."

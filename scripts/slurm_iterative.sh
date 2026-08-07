@@ -10,9 +10,11 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-# Usage: sbatch scripts/slurm_iterative.sh <csv> <model> <out> [schedule]
+# Usage: sbatch scripts/slurm_iterative.sh <csv> <model> <out> [schedule] [best_configs_dir]
 #   schedule: uniform (default) | poisson — schedule column to iterate
 #   (forget_step_N vs forget_step_poisson_N); poisson is balanced-only.
+#   best_configs_dir: optional dir of hparam *_best_config.json — tuned
+#   per-method values override YAML defaults.
 
 # ── Repo root ────────────────────────────────────────────────────────────
 # Under sbatch, $0 points at the spool copy (/var/spool/slurmd/...), so
@@ -44,19 +46,31 @@ CSV="${1:-$CSV_DEFAULT}"
 MODEL="${2:-$OUT_BASE/checkpoints/original_model_best.pt}"
 OUT="${3:-$OUT_BASE/iterative}"
 SCHEDULE="${4:-uniform}"
+BEST="${5:-}"
 
 cd "$PROJECT_DIR"
-echo "[$(date)] Iterative protocol → $OUT"
+echo "[$(date)] Iterative protocol ($SCHEDULE) → $OUT"
 
 # GPU preflight
 bash "$PROJECT_DIR/scripts/gpu_preflight.sh" || exit 1
 
-python src/iterative.py \
-    --csv "$CSV" --model "$MODEL" --out "$OUT" \
-    --mode cumulative \
-    --seed 42 --scale 1.0 \
-    --subset holdout \
-    --schedule "$SCHEDULE" \
-    --re_emergence 5 10 15 2>&1
+if [ -n "$BEST" ]; then
+    python src/iterative.py \
+        --csv "$CSV" --model "$MODEL" --out "$OUT" \
+        --mode cumulative \
+        --seed 42 --scale 1.0 \
+        --subset holdout \
+        --schedule "$SCHEDULE" \
+        --best_configs "$BEST" \
+        --re_emergence 5 10 15 2>&1
+else
+    python src/iterative.py \
+        --csv "$CSV" --model "$MODEL" --out "$OUT" \
+        --mode cumulative \
+        --seed 42 --scale 1.0 \
+        --subset holdout \
+        --schedule "$SCHEDULE" \
+        --re_emergence 5 10 15 2>&1
+fi
 
 echo "[$(date)] Iterative complete."
