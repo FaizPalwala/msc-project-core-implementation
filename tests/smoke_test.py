@@ -36,13 +36,14 @@ def _make_synthetic_dataset(tmpdir: str) -> str:
     rows = []
     rng = np.random.RandomState(42)
 
-    for cid in range(6):  # 6 identities: 2 per split (retain/forget/test)
-        # 2 identities per split guarantees every probe sees >= 2 classes:
+    for cid in range(6):  # 6 identities: 3 retain / 3 forget (v1.1, no test)
+        # 2+ identities per split guarantees every probe sees >= 2 classes:
         # the probe 80/20-splits each split's samples, and with 3 imgs per
         # identity at least one image of each identity stays in the train
         # fold (test fold holds at most 2 of 6 samples).
-        split = "retain" if cid < 2 else "forget" if cid < 4 else "test"
-        fs = cid - 2 if split == "forget" else -1
+        # v1.1 schema: no 'test' split — every identity is retain or forget.
+        split = "retain" if cid < 3 else "forget"
+        fs = cid - 3 if split == "forget" else -1
         for img_idx in range(3):  # 3 images per identity
             fname = f"identity_{cid:03d}_img_{img_idx:02d}.jpg"
             fpath = img_dir / fname
@@ -57,7 +58,9 @@ def _make_synthetic_dataset(tmpdir: str) -> str:
                 "gender": cid % 2,
                 "split": split,
                 "forget_step": fs,
-                "forget_variant": 0 if fs >= 0 else -1,
+                # Mirror the uniform column for shape only — a real seeded
+                # Poisson schedule is fixed upstream; smoke needs the column.
+                "forget_step_poisson": fs,
                 "arcface_similarity": round(0.5 + img_idx * 0.1, 4),
                 "laplacian_variance": round(50.0 + img_idx * 20.0, 2),
                 "detection_confidence": round(0.90 + img_idx * 0.02, 4),

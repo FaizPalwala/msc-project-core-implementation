@@ -258,7 +258,7 @@ def train(
     save_path.mkdir(parents=True, exist_ok=True)
 
     history: list[dict] = []
-    best_val_id_acc = 0.0
+    best_val_id_acc = -1.0
     t0 = time.time()
 
     header = (
@@ -299,7 +299,9 @@ def train(
             f"{lr_now:>10.2e}"
         )
 
-        # Save best (by validation identity accuracy)
+        # Save best (by validation identity accuracy).  Init to -1 so the
+        # first epoch's model is always saved even if val acc is 0.0 (a
+        # degenerate small-val case would otherwise never produce a _best.pt).
         if val_res["id_acc"] > best_val_id_acc:
             best_val_id_acc = val_res["id_acc"]
             save_model(

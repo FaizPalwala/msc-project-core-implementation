@@ -140,10 +140,13 @@ def evaluate_full(
     verbose: bool = True,
     subset: str = "all",   # "all" | "train" | "holdout"
 ) -> dict[str, Any]:
-    """Evaluate on retain, test, and forget splits (both heads)."""
+    """Evaluate on retain and forget splits (both heads)."""
     results: dict[str, Any] = {}
 
-    for split in ["retain", "test", "forget"]:
+    # v1.1 schema: no 'test' split — every identity is retain or forget,
+    # each with train/holdout image subsets.  retain+forget holdout is the
+    # generalisation eval (evaluate_full's caller chooses the subset).
+    for split in ["retain", "forget"]:
         ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform(),
                                     subset=subset)
         if len(ds) == 0:
@@ -178,7 +181,7 @@ def evaluate_per_identity(
     batch_size: int = 128,
     subset: str = "all",
 ) -> dict[int, dict[str, Any]]:
-    """Evaluate each forget identity (forget_variant) separately.
+    """Evaluate each forget identity separately, keyed by identity_id.
 
     Returns dict keyed by identity_id → per-head eval summary.
     Uses the entire forget split, iterating over unique identity IDs.

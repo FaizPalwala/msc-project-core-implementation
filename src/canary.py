@@ -122,11 +122,19 @@ def verify_canary_unlearning(
         # Canary verification deliberately inspects ALL images of the canary
         # identity (train + holdout) — the canary pattern was inserted into
         # every image before training, so we verify its erasure everywhere.
+        # Filter directly on identity_id (the old forget_variant_0_{cid%4}
+        # approximation is gone — per-identity selection now keys on the
+        # identity_id column).
         ds = VirtualIdentityDataset(
-            csv_path, split=f"forget_variant_0_{cid % 4}",  # approximate
+            csv_path, split="forget",
             transform=get_val_transform(),
             subset="all",
         )
+        mask = ds.df["identity_id"] == cid
+        if not mask.any():
+            results[str(cid)] = {"error": f"identity_id {cid} not in forget split"}
+            continue
+        ds.df = ds.df[mask].reset_index(drop=True)
         # Collect features for this identity's images
         loader = torch.utils.data.DataLoader(
             ds, batch_size=batch_size, shuffle=False,
