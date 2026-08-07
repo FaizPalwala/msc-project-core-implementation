@@ -353,6 +353,17 @@ def run_search(
         logger.info(f"\n  Best config: {sorted_results[0]['config']}")
         logger.info(f"  Results saved → {out_csv}")
 
+        # ── Export best config for downstream stages ─────────────────────
+        # Per-method file {method}_best_config.json so hparam jobs for
+        # different methods can run IN PARALLEL without racing on a shared
+        # file.  config_loader.load_method_configs(best_configs_path=<dir>)
+        # globs *_best_config.json and merges each method's tuned values
+        # over the YAML defaults.
+        best_json = out_path / f"{method_name}_best_config.json"
+        with open(best_json, "w") as fh:
+            json.dump(sorted_results[0]["config"], fh, indent=2)
+        logger.info(f"  Best config exported → {best_json}")
+
     return all_results
 
 
