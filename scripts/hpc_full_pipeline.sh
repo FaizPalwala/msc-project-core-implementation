@@ -130,6 +130,27 @@ else
     echo "[$(date)] Skipping iterative + stability (imbalanced has no schedule axis)"
     ITER_JOB=""
     STAB_JOB=""
+
+    # ── Imbalanced stress-test chain (Protocols B + C) ─────────────────
+    # B: per-bin retrain oracles — one oracle PER bin (the oracle changes
+    #    per bin: bin-B's oracle still trains on the other bins' forgets).
+    # C: dynamic selection — 1 best method per category (baseline/SOTA/
+    #    novel) by UF score from single_shot_best; the 3 picks feed the
+    #    budget sweep (deferred until upstream results land).
+    echo "[$(date)] Submitting per-bin oracles (Protocol B; dependency: $SINGLE_BEST_JOB)…"
+    ORACLE_JOB=$(sbatch --parsable \
+        --dependency=afterok:$SINGLE_BEST_JOB \
+        "$PROJECT_DIR/scripts/slurm_per_bin_oracle.sh" \
+        "$CSV" "$MODEL" "$OUT/oracles")
+    echo "  Per-bin oracle job: $ORACLE_JOB"
+
+    echo "[$(date)] Submitting Protocol C selection (dependency: $SINGLE_BEST_JOB)…"
+    SELC_JOB=$(sbatch --parsable \
+        --dependency=afterok:$SINGLE_BEST_JOB \
+        "$PROJECT_DIR/scripts/slurm_select_protocol_c.sh" \
+        "$OUT/single_shot_best/single_shot_aggregated.json" \
+        "$OUT")
+    echo "  Protocol C selection job: $SELC_JOB"
 fi
 
 # ── Stage 5: Canary experiment (independent of train — uses its own
@@ -143,6 +164,8 @@ echo "  Canary job: $CANARY_JOB"
 # ── Stage 6: Report (after stability + single_shot_best + canary) ───────
 REPORT_DEPS="$CANARY_JOB:$SINGLE_BEST_JOB"
 [ -n "$STAB_JOB" ] && REPORT_DEPS="$STAB_JOB:$REPORT_DEPS"
+[ -n "$ORACLE_JOB" ] && REPORT_DEPS="$ORACLE_JOB:$REPORT_DEPS"
+[ -n "$SELC_JOB" ] && REPORT_DEPS="$SELC_JOB:$REPORT_DEPS"
 echo "[$(date)] Submitting report (dependency: $REPORT_DEPS)…"
 REPORT_JOB=$(sbatch --parsable \
     --dependency=afterok:$REPORT_DEPS \
@@ -156,4 +179,4 @@ echo "  Dataset: $DATASET ($CSV)"
 echo "  Results: $OUT"
 echo "  Logs:    logs/unlearn_*_*.out (match by job IDs below)"
 echo "  Monitor: squeue -u \$USER"
-echo "  Job IDs: train=$TRAIN_JOB single=$SINGLE_JOB single_best=$SINGLE_BEST_JOB hp=[$HP_METHODS] iter=$ITER_JOB stab=$STAB_JOB canary=$CANARY_JOB report=$REPORT_JOB"
+echo "  Job IDs: train=$TRAIN_JOB single=$SINGLE_JOB single_best=$SINGLE_BEST_JOB hp=[$HP_METHODS] iter=$ITER_JOB stab=$STAB_JOB oracle=$ORACLE_JOB selc=$SELC_JOB canary=$CANARY_JOB report=$REPORT_JOB"
