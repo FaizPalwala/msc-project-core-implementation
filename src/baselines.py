@@ -26,7 +26,10 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset, Subset
 
-from dataset import VirtualIdentityDataset, get_train_transform, get_val_transform
+from dataset import (
+    VirtualIdentityDataset, forget_split_name,
+    get_train_transform, get_val_transform,
+)
 from device_utils import resolve_num_workers
 from model import build_dual_head_resnet18, copy_model
 
@@ -75,10 +78,11 @@ def _make_loader(
     forget_step: int | None = None,
     num_workers: int = 2,
     subset: str = "all",
+    schedule: str = "uniform",
 ) -> tuple[DataLoader, int]:
     """Build a dual-label DataLoader."""
     if forget_step is not None and split == "forget":
-        split = f"forget_step_{forget_step}"
+        split = forget_split_name(forget_step, schedule)
     ds = VirtualIdentityDataset(csv_path, split=split, transform=transform, subset=subset)
     return (
         DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
@@ -135,9 +139,14 @@ def retrain_oracle(
             csv_path, split="forget", transform=get_train_transform(),
             subset=kwargs.get("subset", "all"),
         )
+        # Exclude the current schedule batch from the oracle's retain set.
+        # Column depends on the schedule: uniform → forget_step, poisson →
+        # forget_step_poisson.
+        schedule = kwargs.get("schedule", "uniform")
+        fg_col = "forget_step_poisson" if schedule == "poisson" else "forget_step"
         retain_indices = [
             i for i in range(len(full_forget_ds))
-            if int(full_forget_ds.df.iloc[i]["forget_step"]) != forget_step
+            if int(full_forget_ds.df.iloc[i][fg_col]) != forget_step
         ]
         if retain_indices:
             extra = Subset(full_forget_ds, retain_indices)
@@ -207,7 +216,7 @@ def gradient_ascent(
     unlearn_model = copy_model(model, device)
     unlearn_model.train()
 
-    f_split = f"forget_step_{forget_step}" if forget_step is not None else "forget"
+    f_split = forget_split_name(forget_step, kwargs.get("schedule", "uniform")) if forget_step is not None else "forget"
     f_loader, _ = _make_loader(csv_path, f_split, get_val_transform(),
                                batch_size, shuffle=True,
                                subset=kwargs.get("subset", "all"))
@@ -315,7 +324,7 @@ def successive_random_relabelling(
     t0 = time.time()
     unlearn_model = copy_model(model, device)
 
-    f_split = f"forget_step_{forget_step}" if forget_step is not None else "forget"
+    f_split = forget_split_name(forget_step, kwargs.get("schedule", "uniform")) if forget_step is not None else "forget"
     forget_ds = VirtualIdentityDataset(
         csv_path, split=f_split, transform=get_train_transform(),
         subset=kwargs.get("subset", "all"),

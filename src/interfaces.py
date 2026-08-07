@@ -37,7 +37,8 @@ class UnlearningResult(TypedDict, total=False):
 REQUIRED_KEYS = ("model", "method", "metrics")
 
 
-def prepare_method_call(cfg: dict, identity_classes: int | None = None) -> dict:
+def prepare_method_call(cfg: dict, identity_classes: int | None = None,
+                        schedule: str = "uniform") -> dict:
     """Pin run-invariant config on an unlearning-method config.
 
     Pins:
@@ -46,6 +47,9 @@ def prepare_method_call(cfg: dict, identity_classes: int | None = None) -> dict:
       - ``identity_classes`` (if given) — inferred from the CSV so methods
         that build fresh heads (retrain oracle, SRL relabelling) track the
         dataset size instead of hardcoding 600.
+      - ``schedule`` — 'uniform' (forget_step_N) or 'poisson'
+        (forget_step_poisson_N); methods build their forget split from
+        dataset.forget_split_name(forget_step, schedule).
 
     All runners (single_shot, iterative, hparam_search, ablation_study)
     must build method configs through this helper so the pins cannot be
@@ -53,6 +57,7 @@ def prepare_method_call(cfg: dict, identity_classes: int | None = None) -> dict:
     """
     out = dict(cfg)
     out["subset"] = "train"
+    out["schedule"] = schedule
     if identity_classes is not None:
         out["identity_classes"] = identity_classes
     return out

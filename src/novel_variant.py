@@ -19,7 +19,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from baselines import _combined_loss as _closs
-from dataset import VirtualIdentityDataset, get_val_transform
+from dataset import VirtualIdentityDataset, forget_split_name, get_val_transform
 from device_utils import resolve_num_workers
 from model import copy_model
 
@@ -142,7 +142,7 @@ def msg_kd(
     for p in ref_model.parameters():
         p.requires_grad_(False)
 
-    f_split = f"forget_step_{forget_step}" if forget_step is not None else "forget"
+    f_split = forget_split_name(forget_step, kwargs.get("schedule", "uniform")) if forget_step is not None else "forget"
     subset_ = kwargs.get("subset", "all")
     f_loader, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_)
     r_loader, _ = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True, subset=subset_)
@@ -261,7 +261,7 @@ def adaptiformet(
     for p in ref_model.parameters():
         p.requires_grad_(False)
 
-    f_split = f"forget_step_{forget_step}" if forget_step is not None else "forget"
+    f_split = forget_split_name(forget_step, kwargs.get("schedule", "uniform")) if forget_step is not None else "forget"
     subset_ = kwargs.get("subset", "all")
     f_loader, n_f = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_)
     r_loader, n_r = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True, subset=subset_)
