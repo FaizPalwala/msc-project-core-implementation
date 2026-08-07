@@ -1,5 +1,9 @@
 # HPC CookBook — Machine Unlearning on Aire
 
+**v1.1 (750-id redesign).**  Source of truth for running the evaluation
+suite on Aire.  Code-level details live in the README; metric semantics in
+`METRICS_GUIDE.md`.  Update all three together when the design changes.
+
 ## Environment Setup
 
 ```bash
@@ -28,41 +32,67 @@ pip install -e .
 ```
 /mnt/scratch/<username>/core/
 ├── code/                          ← repo (this project)
-│   ├── configs/methods/           ← per-method hyperparameters
-│   ├── scripts/                   ← Slurm wrappers + pipeline launcher
-│   └── results/                   ← all run outputs (gitignored)
-│       ├── checkpoints/           ← trained models (.pt)
-│       ├── single_shot/           ← single-shot evaluation output
-│       ├── iterative/             ← iterative protocol output
-│       ├── hparam/                ← HP search trials
-│       ├── canary/                ← canary verification results
-│       └── report/                ← LaTeX/Markdown reports
-└── bench/                         ← benchmark release (sister of code/)
-    ├── metadata/
-    │   ├── dataset.csv            ← balanced (600 IDs, 75 imgs/ID)
-    │   ├── dataset_imbalanced.csv ← 85:40:20 gradient
-    │   └── datasetsummary.json
-    └── images/                    ← 224×224 aligned face crops
+│   ├── scripts/                   ← all slurm_*.sh entry points
+│   ├── src/                       ← the evaluation suite
+│   └── results/                   ← namespaced by dataset (gitignored)
+│       ├── balanced/
+│       └── imbalanced/
+├── bench/                         ← sister dir: metadata + images
+│   └── metadata/
+│       ├── dataset.csv            (balanced, 750-id, 12 cols)
+│       └── dataset_imbalanced.csv (imbalanced, 12 cols, no schedule cols)
+└── logs/                          ← merged .out streams (job-id suffix)
 ```
 
-All scripts resolve paths relative to the repo (`PROJECT_DIR`), so the
-`core/` parent may live anywhere on scratch — the data dir is always
-`$(dirname $PROJECT_DIR)/bench`.
+Results are namespaced by dataset (`results/balanced` vs `results/imbalanced`)
+so both artifacts can run and be analysed without clobbering.  Logs are the
+single merged stream: every Python invocation uses `2>&1` into the job's
+`.out`; `.err` is reserved for Slurm-level errors.
+
+## Dataset Selection
+
+The one pipeline override is the `DATASET` env var (balanced | imbalanced):
+
+```bash
+DATASET=balanced   bash scripts/hpc_full_pipeline.sh   # default
+DATASET=imbalanced bash scripts/hpc_full_pipeline.sh
+```
+
+Identity classes, forget-step count and per-step sizes are **inferred from
+the CSV** at runtime (600-id vs 750-id needs no code change).
 
 ## Pipeline Stages
 
 ```
-train ──→ single_shot ──→ iterative ──→ stability ──┐
-  │            │                                     │
-  │            └──→ hparam (parallel) ──→ iterative  │
-  │                                                  │
-  └───────────→ canary (independent) ────────────────┴──→ report
+                     ┌─ single_shot (default configs) ─────────┐
+train ───────────────┼─ hparam ×8 methods, ALL parallel ──────┤
+                     └─────────────────────────────────────────┘
+                          │
+                          ├─→ single_shot_best (tuned configs) ──→ report
+                          ├─→ iterative (tuned) → stability ──────┘
+                          └─→ canary (independent) ────────────────┘
+
+imbalanced adds (after single_shot_best):
+  per-bin oracles (Protocol B) ─┐
+  Protocol C selection ─────────┼─→ budget sweep (Protocol C) → report
 ```
 
-- single-shot + HP search run in parallel after train
-- iterative needs both (best HP configs + single-shot baseline)
-- stability plots after iterative; canary runs independently
-- report (LaTeX/Markdown) after stability + canary both finish
+| Stage | Script | GPU | Description |
+|-------|--------|-----|-------------|
+| Train | `slurm_train.sh` | 1 L40S | Original model on retain+forget (train subset) |
+| Single-shot | `slurm_single_shot.sh` | 1 L40S | All methods, all forget IDs, default configs + per-identity/demographic CSVs |
+| HP search | `slurm_hparam.sh` | 1 L40S ×8 | **One job per method, all parallel**; each writes `{method}_best_config.json` |
+| Single-shot best | `slurm_single_shot.sh <out> <best_dir>` | 1 L40S | Same eval with tuned configs (compare-and-contrast vs default) |
+| Iterative | `slurm_iterative.sh` | 1 L40S | Schedule protocol (uniform 5×15 or Poisson), tuned configs, `--order_seed` |
+| Stability | `slurm_stability.sh` | CPU | 16 publication plots from the aggregated iterative CSV |
+| Canary | `slurm_canary.sh` | 1 L40S | Pixel-level ground-truth deletion proof (independent) |
+| Report | `slurm_report.sh` | CPU | LaTeX/Markdown synthesis of all results |
+| Per-bin oracles (imbalanced) | `slurm_per_bin_oracle.sh` | 1 L40S | Protocol B: 3 retrains, each excluding only one bin's forgets |
+| Protocol C selection (imbalanced) | `slurm_select_protocol_c.sh` | CPU | 1 best method per category by UF score |
+| Budget sweep (imbalanced) | `slurm_budget_sweep.sh` | 1 L40S | Per-bin distance-to-oracle vs unlearning budget |
+
+The imbalanced chain skips iterative + stability (no schedule axis — the
+popularity gradient IS the axis) and instead runs Protocols B + C.
 
 ## Job Submission
 
@@ -70,7 +100,13 @@ train ──→ single_shot ──→ iterative ──→ stability ──┐
 
 ```bash
 # Submit the entire pipeline — Slurm handles dependencies
-sbatch scripts/hpc_full_pipeline.sh
+DATASET=balanced bash scripts/hpc_full_pipeline.sh
+
+# Poisson schedule instead of uniform (results → results/balanced/iterative_poisson)
+ITER_SCHEDULE=poisson DATASET=balanced bash scripts/hpc_full_pipeline.sh
+
+# HP method set override (default: ng_plus msg ct msg_kd adaptiformet ga srl ft)
+HP_METHODS="ng_plus ft" bash scripts/hpc_full_pipeline.sh
 
 # Monitor progress
 squeue -u $USER
@@ -79,92 +115,74 @@ squeue -u $USER
 ### Individual Stages
 
 ```bash
+CSV=../bench/metadata/dataset.csv
+MODEL=results/balanced/checkpoints/original_model_best.pt
+
 # 1. Train original model (30 epochs, ~4-6 hr on L40S)
-JOB_TRAIN=$(sbatch --parsable \
-    --job-name=unlearn_train \
-    --time=12:00:00 --partition=gpu --gres=gpu:1 \
-    --cpus-per-task=8 --mem=32G \
-    scripts/slurm_train.sh)
+sbatch scripts/slurm_train.sh "$CSV" results/balanced/checkpoints
 
-# 2a. Single-shot evaluation (~12-24 hr, all 10 methods)
-JOB_SINGLE=$(sbatch --parsable \
-    --dependency=afterok:$JOB_TRAIN \
-    --job-name=unlearn_single \
-    --time=24:00:00 --partition=gpu --gres=gpu:1 \
-    --cpus-per-task=8 --mem=32G \
-    scripts/slurm_single_shot.sh)
+# 2a. Single-shot evaluation (default configs, ~12-24 hr)
+sbatch scripts/slurm_single_shot.sh "$CSV" "$MODEL" results/balanced/single_shot
 
-# 2b. HP search (parallel with single-shot, ~8-12 hr per method)
-JOB_HP=$(sbatch --parsable \
-    --dependency=afterok:$JOB_TRAIN \
-    --job-name=unlearn_hp \
-    --time=24:00:00 --partition=gpu --gres=gpu:1 \
-    --cpus-per-task=8 --mem=32G \
-    scripts/slurm_hparam.sh)
+# 2b. HP search — ONE job per method, all parallel (8 jobs for the default set)
+for M in ng_plus msg ct msg_kd adaptiformet ga srl ft; do
+    sbatch scripts/slurm_hparam.sh "$CSV" "$MODEL" results/balanced/hparam "$M" grid
+done
 
-# 3. Iterative protocol (~24-48 hr, 15 steps × multiple methods)
-JOB_ITER=$(sbatch --parsable \
-    --dependency=afterok:$JOB_SINGLE:$JOB_HP \
-    --job-name=unlearn_iter \
-    --time=48:00:00 --partition=gpu --gres=gpu:1 \
-    --cpus-per-task=8 --mem=32G \
-    scripts/slurm_iterative.sh)
+# 2c. Single-shot with BEST configs (after all HP jobs finish)
+sbatch scripts/slurm_single_shot.sh "$CSV" "$MODEL" \
+    results/balanced/single_shot_best results/balanced/hparam
 
-# 4. Stability plots (~1 hr, CPU-only after iterative)
-JOB_STAB=$(sbatch --parsable \
-    --dependency=afterok:$JOB_ITER \
-    --job-name=unlearn_stab \
-    --time=2:00:00 --partition=gpu --gres=gpu:1 \
-    --cpus-per-task=4 --mem=16G \
-    scripts/slurm_stability.sh)
+# 3. Iterative protocol (uniform, tuned configs, ~24-48 hr)
+sbatch scripts/slurm_iterative.sh "$CSV" "$MODEL" \
+    results/balanced/iterative uniform results/balanced/hparam
 
-# 5. Canary verification (independent of train; runs anytime after model exists)
-JOB_CANARY=$(sbatch --parsable \
-    --job-name=unlearn_canary \
-    --time=4:00:00 --partition=gpu --gres=gpu:1 \
-    --cpus-per-task=4 --mem=16G \
-    scripts/slurm_canary.sh)
+# 3b. Poisson schedule (independent experiment, parallel with uniform if desired)
+sbatch scripts/slurm_iterative.sh "$CSV" "$MODEL" \
+    results/balanced/iterative_poisson poisson results/balanced/hparam
 
-# 6. Report generation (after stability + canary both done)
-sbatch --dependency=afterok:$JOB_STAB:$JOB_CANARY \
-    --job-name=unlearn_report \
-    --time=1:00:00 --partition=cpu --cpus-per-task=4 --mem=8G \
-    scripts/slurm_report.sh
+# 4. Stability plots (CPU-only after iterative)
+sbatch scripts/slurm_stability.sh \
+    results/balanced/iterative/iterative_combined_aggregated.csv \
+    results/balanced/iterative/plots \
+    results/balanced/single_shot/single_shot_per_identity.csv \
+    results/balanced/single_shot/single_shot_demographic.csv
+
+# 5. Canary verification (independent; runs anytime after model exists)
+sbatch scripts/slurm_canary.sh "$CSV" results/balanced/canary
+
+# 6. Report (after stability + single_shot_best + canary)
+sbatch scripts/slurm_report.sh results/balanced
+```
+
+### Order-Stability Runs (P3) — parallel seeds
+
+Order-stability: same pretrained model, different forget ORDERINGS per seed,
+μ±σ across seeds.  Each seed is an independent job — run them in parallel:
+
+```bash
+OUT=results/balanced/iterative_order
+for SEED in 42 43 44 45 46; do
+    sbatch --job-name=unlearn_ord_$SEED \
+        --time=48:00:00 --partition=gpu --gres=gpu:1 \
+        --cpus-per-task=8 --mem=32G \
+        --wrap="python src/iterative.py --csv $CSV --model $MODEL \
+                 --out $OUT/seed_$SEED --seed $SEED --n_seeds 1 \
+                 --order_seed $SEED --subset holdout \
+                 --best_configs results/balanced/hparam"
+done
+# Then aggregate: python src/iterative.py --aggregate-only ... (or
+# re-run main() with n_seeds=5 pointing at $OUT — it aggregates seed_*/)
 ```
 
 ### Smoke Testing (Before Full Run)
 
 ```bash
-# Run from the repo root (code/); bench sits as its sibling (../bench).
-# Single-shot, scaled 10× down, 1 seed, 2 methods, ~15 min
-python src/single_shot.py \
-    --csv ../bench/metadata/dataset.csv \
-    --model results/checkpoints/original_model_best.pt \
-    --scale 0.1 --n_seeds 1 --skip_retrain \
-    --methods ga adaptiformet
+# End-to-end v1.1 smoke proof (synthetic 6-identity dataset, CPU-only, ~10 min)
+sbatch scripts/slurm_smoke.sh
 
-# Iterative, 3 steps, smoke scale, ~30 min
-python src/iterative.py \
-    --csv ../bench/metadata/dataset.csv \
-    --model results/checkpoints/original_model_best.pt \
-    --n_steps 3 --scale 0.1 --n_seeds 1 \
-    --methods adaptiformet
-```
-
-### Multi-Seed Runs (for error bars)
-
-```bash
-# Single-shot with 5 seeds → μ ± σ in aggregated table
-python src/single_shot.py \
-    --csv ../bench/metadata/dataset.csv \
-    --model results/checkpoints/original_model_best.pt \
-    --n_seeds 5 --seed 42
-
-# Iterative with 5 seeds → independent seed_N/ subdirectories
-python src/iterative.py \
-    --csv ../bench/metadata/dataset.csv \
-    --model results/checkpoints/original_model_best.pt \
-    --n_seeds 5 --seed 42
+# Or run interactively from the repo root
+python tests/smoke_test.py
 ```
 
 ## Resource Estimates
@@ -174,23 +192,45 @@ python src/iterative.py \
 | Train | 1 L40S | 8 | 32 GB | 4-6 hr | 30 min |
 | Single-shot | 1 L40S | 8 | 32 GB | 12-24 hr | 1 hr |
 | HP search (per method) | 1 L40S | 8 | 32 GB | 8-12 hr | 1 hr |
+| Single-shot best | 1 L40S | 8 | 32 GB | 12-24 hr | 1 hr |
 | Iterative | 1 L40S | 8 | 32 GB | 24-48 hr | 2 hr |
 | Stability plots | CPU | 4 | 16 GB | 30 min | 5 min |
-| **Total pipeline** | — | — | — | **~48-72 hr** | **~4 hr** |
+| Per-bin oracles (×3) | 1 L40S | 8 | 32 GB | 12-18 hr | — |
+| Budget sweep | 1 L40S | 8 | 32 GB | 8-12 hr | — |
+| **Total pipeline (balanced)** | — | — | — | **~48-72 hr** | **~4 hr** |
+
+Wall-clock note: with 8 parallel HP jobs + single-shot sharing the GPU
+partition, the HP stage's wall time is one method's search (~12 hr), not
+8× — this is the parallelisation win.
 
 ## Parallelisation Strategy
 
 ```
-                    ┌─ single_shot ──────────┐
-train ──────────────┤                        ├── iterative ── stability
-                    └─ hparam_search ────────┘
-                           (1 job per method,
-                            all parallel)
+                     ┌─ single_shot (default) ────────────────┐
+train ───────────────┤                                        ├─ single_shot_best
+                     └─ hparam ×8 methods (ALL parallel) ────┘      │
+                                                              ├─ iterative ── stability
+                                                              └─ canary (parallel)
 ```
 
-- Single-shot and HP search are independent after training — submit both simultaneously.
-- HP search can be further parallelised: one Slurm job per method (ng_plus, msg, msg_kd, ct, adaptiformet).
-- Iterative depends on both — uses best HP configs from search + single-shot as baseline.
+- **HP search: one Slurm job per method, all in parallel** — each writes its
+  own `{method}_best_config.json`, so jobs never race on a shared file.
+  Default set: ng_plus msg ct msg_kd adaptiformet ga srl ft (methods with
+  grids in `hparam_search.GRIDS`; no_unlearning/retrain have no tunable
+  params).  Override with `HP_METHODS`.
+- **Single-shot and HP run concurrently** after train (both depend only on
+  the trained model).
+- **`single_shot_best` runs after all HP jobs** — tuned configs override
+  YAML defaults (`config_loader` merges; the log states
+  `[config] DEFAULT` vs `[config] OPTIMIZED` per run).
+- **Uniform and Poisson iterative are independent experiments** — submit
+  both; they write to separate dirs (`iterative` vs `iterative_poisson`).
+- **Order-stability seeds are independent jobs** — run 5 seeds in parallel,
+  then aggregate μ±σ (see above).
+- **Canary is fully independent** — no dependency on train; runs anytime.
+- **Imbalanced Protocols B + C** — per-bin oracles (3 retrains in one job)
+  and Protocol C selection run in parallel after single_shot_best; the
+  budget sweep needs both.
 
 ## Common Issues
 
@@ -210,11 +250,26 @@ train ──────────────┤                        ├�
 - HP search: re-run with same `--out` dir, completed trials are skipped
 - Iterative: per-step JSONL is append-only, survives partial runs
 
+### macOS local verification (dev machine)
+- Use `PYTHONPATH="" /opt/anaconda3/envs/ml_spec/bin/python3` — the Hermes
+  venv leaks site-packages otherwise.
+- The smoke test is slow on CPU (~10 min) but completes — don't kill it early.
+- DataLoader `num_workers>0` with two concurrent loaders can intermittently
+  deadlock under macOS spawn; this is macOS-only, Linux/fork HPC is unaffected.
+
 ## Aire-Specific Notes
 
 - **Partition**: `gpu` (28 nodes × 3 L40S GPUs, 168 cores each)
-- **Flash storage**: `$TMP_SHARED` (1 TB/job, auto-purged). Stage datasets there for I/O-heavy phases.
-- **Lustre scratch**: `/mnt/scratch/$USER/` — large capacity, slower I/O. The `core/` project tree (code + bench + results) lives here.
-- **Home**: `$HOME` — small quota, versioned backups. Keep only dotfiles and small configs; the repo lives on scratch (code is backed up via git remote; results are regenerable).
+- **No hard job cap** — the old "5-job limit" was an empirical free-GPU
+  count at submit time, not a quota (GrpTRES is empty).  QoS `normal`.
+- **Flash storage**: `$TMP_SHARED` (1 TB/job, auto-purged). Stage datasets
+  there for I/O-heavy phases.
+- **Lustre scratch**: `/mnt/scratch/$USER/` — large capacity, slower I/O.
+  The `core/` project tree (code + bench + results) lives here.
+- **Home**: `$HOME` — small quota, versioned backups. Keep only dotfiles
+  and small configs; the repo lives on scratch (code is backed up via git
+  remote; results are regenerable).
 - **Max wall time**: 72 hr on gpu partition.
 - **Interactive**: `srun --partition=gpu --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=4:00:00 --pty bash`
+- **Push from the login node** — commits are made locally and pushed by the
+  user from Aire; the repo never pushes from dev machines.
