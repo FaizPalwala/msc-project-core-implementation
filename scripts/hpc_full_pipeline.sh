@@ -151,6 +151,16 @@ else
         "$OUT/single_shot_best/single_shot_aggregated.json" \
         "$OUT")
     echo "  Protocol C selection job: $SELC_JOB"
+
+    # C (sweep): budget sweep on the dynamically-picked methods, using the
+    # per-bin oracles as the distance reference.  Needs BOTH B and C-selection.
+    echo "[$(date)] Submitting budget sweep (dependency: $ORACLE_JOB:$SELC_JOB)…"
+    SWEEP_JOB=$(sbatch --parsable \
+        --dependency=afterok:$ORACLE_JOB:$SELC_JOB \
+        "$PROJECT_DIR/scripts/slurm_budget_sweep.sh" \
+        "$CSV" "$MODEL" "$OUT/protocol_c_methods.json" \
+        "$OUT/oracles" "$OUT" "$OUT/hparam")
+    echo "  Budget sweep job: $SWEEP_JOB"
 fi
 
 # ── Stage 5: Canary experiment (independent of train — uses its own
@@ -166,6 +176,7 @@ REPORT_DEPS="$CANARY_JOB:$SINGLE_BEST_JOB"
 [ -n "$STAB_JOB" ] && REPORT_DEPS="$STAB_JOB:$REPORT_DEPS"
 [ -n "$ORACLE_JOB" ] && REPORT_DEPS="$ORACLE_JOB:$REPORT_DEPS"
 [ -n "$SELC_JOB" ] && REPORT_DEPS="$SELC_JOB:$REPORT_DEPS"
+[ -n "$SWEEP_JOB" ] && REPORT_DEPS="$SWEEP_JOB:$REPORT_DEPS"
 echo "[$(date)] Submitting report (dependency: $REPORT_DEPS)…"
 REPORT_JOB=$(sbatch --parsable \
     --dependency=afterok:$REPORT_DEPS \
@@ -179,4 +190,4 @@ echo "  Dataset: $DATASET ($CSV)"
 echo "  Results: $OUT"
 echo "  Logs:    logs/unlearn_*_*.out (match by job IDs below)"
 echo "  Monitor: squeue -u \$USER"
-echo "  Job IDs: train=$TRAIN_JOB single=$SINGLE_JOB single_best=$SINGLE_BEST_JOB hp=[$HP_METHODS] iter=$ITER_JOB stab=$STAB_JOB oracle=$ORACLE_JOB selc=$SELC_JOB canary=$CANARY_JOB report=$REPORT_JOB"
+echo "  Job IDs: train=$TRAIN_JOB single=$SINGLE_JOB single_best=$SINGLE_BEST_JOB hp=[$HP_METHODS] iter=$ITER_JOB stab=$STAB_JOB oracle=$ORACLE_JOB selc=$SELC_JOB sweep=$SWEEP_JOB canary=$CANARY_JOB report=$REPORT_JOB"
