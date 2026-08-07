@@ -80,21 +80,31 @@ HP_JOB=$(sbatch --parsable \
 echo "  HP search job: $HP_JOB"
 
 # ── Stage 3: Iterative (after single-shot, uses best configs) ───────────
-echo "[$(date)] Submitting iterative (dependency: $SINGLE_JOB:$HP_JOB)…"
-ITER_JOB=$(sbatch --parsable \
-    --dependency=afterok:$SINGLE_JOB:$HP_JOB \
-    "$PROJECT_DIR/scripts/slurm_iterative.sh" \
-    "$CSV" "$MODEL" "$OUT/iterative")
-echo "  Iterative job: $ITER_JOB"
+# Balanced only — imbalanced has no forget_step schedule to iterate over
+# (its experimental axis is the popularity gradient, not time).
+if [ "$DATASET" = "balanced" ]; then
+    echo "[$(date)] Submitting iterative (dependency: $SINGLE_JOB:$HP_JOB)…"
+    ITER_JOB=$(sbatch --parsable \
+        --dependency=afterok:$SINGLE_JOB:$HP_JOB \
+        "$PROJECT_DIR/scripts/slurm_iterative.sh" \
+        "$CSV" "$MODEL" "$OUT/iterative")
+    echo "  Iterative job: $ITER_JOB"
 
-# ── Stage 4: Stability plots (after iterative) ──────────────────────────
-echo "[$(date)] Submitting stability (dependency: $ITER_JOB)…"
-STAB_JOB=$(sbatch --parsable \
-    --dependency=afterok:$ITER_JOB \
-    "$PROJECT_DIR/scripts/slurm_stability.sh" \
-    "$OUT/iterative/iterative_combined_aggregated.csv" \
-    "$OUT/iterative/plots")
-echo "  Stability job: $STAB_JOB"
+    # ── Stage 4: Stability plots (after iterative) ──────────────────────
+    echo "[$(date)] Submitting stability (dependency: $ITER_JOB)…"
+    STAB_JOB=$(sbatch --parsable \
+        --dependency=afterok:$ITER_JOB \
+        "$PROJECT_DIR/scripts/slurm_stability.sh" \
+        "$OUT/iterative/iterative_combined_aggregated.csv" \
+        "$OUT/iterative/plots" \
+        "$OUT/single_shot/single_shot_per_identity.csv" \
+        "$OUT/single_shot/single_shot_demographic.csv")
+    echo "  Stability job: $STAB_JOB"
+else
+    echo "[$(date)] Skipping iterative + stability (imbalanced has no schedule axis)"
+    ITER_JOB=""
+    STAB_JOB=""
+fi
 
 # ── Stage 5: Canary experiment (independent of train — uses its own
 #    canary-tagged dataset and training run) ─────────────────────────────
@@ -104,10 +114,12 @@ CANARY_JOB=$(sbatch --parsable \
     "$CSV" "$OUT/canary")
 echo "  Canary job: $CANARY_JOB"
 
-# ── Stage 6: Report (after stability + canary) ──────────────────────────
-echo "[$(date)] Submitting report (dependency: $STAB_JOB:$CANARY_JOB)…"
+# ── Stage 6: Report (after stability + canary; stability only for balanced) ──
+REPORT_DEPS="$CANARY_JOB"
+[ -n "$STAB_JOB" ] && REPORT_DEPS="$STAB_JOB:$REPORT_DEPS"
+echo "[$(date)] Submitting report (dependency: $REPORT_DEPS)…"
 REPORT_JOB=$(sbatch --parsable \
-    --dependency=afterok:$STAB_JOB:$CANARY_JOB \
+    --dependency=afterok:$REPORT_DEPS \
     "$PROJECT_DIR/scripts/slurm_report.sh" \
     "$OUT")
 echo "  Report job: $REPORT_JOB"
