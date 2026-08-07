@@ -38,7 +38,8 @@ REQUIRED_KEYS = ("model", "method", "metrics")
 
 
 def prepare_method_call(cfg: dict, identity_classes: int | None = None,
-                        schedule: str = "uniform") -> dict:
+                        schedule: str = "uniform",
+                        order_seed: int | None = None) -> dict:
     """Pin run-invariant config on an unlearning-method config.
 
     Pins:
@@ -50,6 +51,9 @@ def prepare_method_call(cfg: dict, identity_classes: int | None = None,
       - ``schedule`` — 'uniform' (forget_step_N) or 'poisson'
         (forget_step_poisson_N); methods build their forget split from
         dataset.forget_split_name(forget_step, schedule).
+      - ``order_seed`` (if given) — order-stability permutation (P3): which
+        forget identities sit at which uniform step.  Methods forward it to
+        VirtualIdentityDataset so the whole run sees one consistent remap.
 
     All runners (single_shot, iterative, hparam_search, ablation_study)
     must build method configs through this helper so the pins cannot be
@@ -58,6 +62,8 @@ def prepare_method_call(cfg: dict, identity_classes: int | None = None,
     out = dict(cfg)
     out["subset"] = "train"
     out["schedule"] = schedule
+    if order_seed is not None:
+        out["order_seed"] = order_seed
     if identity_classes is not None:
         out["identity_classes"] = identity_classes
     return out

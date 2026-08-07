@@ -32,10 +32,11 @@ logger = logging.getLogger(__name__)
 
 
 def _loader(csv, split, transform, batch_size, shuffle=False,
-            workers: int | None = None, subset: str = "all"):
+            workers: int | None = None, subset: str = "all", order_seed=None):
     if workers is None:
         workers = resolve_num_workers()
-    ds = VirtualIdentityDataset(csv, split=split, transform=transform, subset=subset)
+    ds = VirtualIdentityDataset(csv, split=split, transform=transform,
+                                subset=subset, order_seed=order_seed)
     return DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
                       num_workers=workers, pin_memory=True), len(ds)
 
@@ -144,7 +145,7 @@ def msg_kd(
 
     f_split = forget_split_name(forget_step, kwargs.get("schedule", "uniform")) if forget_step is not None else "forget"
     subset_ = kwargs.get("subset", "all")
-    f_loader, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_)
+    f_loader, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_, order_seed=kwargs.get("order_seed"))
     r_loader, _ = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True, subset=subset_)
     criterion = nn.CrossEntropyLoss()
     kl_crit = nn.KLDivLoss(reduction="batchmean", log_target=True)
@@ -263,7 +264,7 @@ def adaptiformet(
 
     f_split = forget_split_name(forget_step, kwargs.get("schedule", "uniform")) if forget_step is not None else "forget"
     subset_ = kwargs.get("subset", "all")
-    f_loader, n_f = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_)
+    f_loader, n_f = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_, order_seed=kwargs.get("order_seed"))
     r_loader, n_r = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True, subset=subset_)
     criterion = nn.CrossEntropyLoss()
     kl_crit = nn.KLDivLoss(reduction="batchmean", log_target=True)

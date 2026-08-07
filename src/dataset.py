@@ -54,6 +54,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import torch
 from PIL import Image
@@ -195,6 +196,7 @@ class VirtualIdentityDataset(Dataset):
         transform: T.Compose | None = None,
         img_size: int = 224,
         subset: str | None = None,  # None → fail-fast; "all"|"train"|"holdout"
+        order_seed: int | None = None,  # None → CSV order; int → order-stability permutation
     ) -> None:
         csv_path = Path(csv_path)
         # Auto-detect format: .parquet → read_parquet, else read_csv
@@ -202,6 +204,33 @@ class VirtualIdentityDataset(Dataset):
             df_full = pd.read_parquet(csv_path)
         else:
             df_full = pd.read_csv(csv_path)
+
+        # ── Order-stability permutation ─────────────────────────────────
+        # order_seed remaps WHICH forget identities sit at WHICH uniform
+        # step, deterministically, before any split filtering.  This is the
+        # order-stability test (P3): same pretrained model, 5 seeds ×
+        # different forget orderings, report μ±σ.  The permutation is a pure
+        # function of (sorted forget identity list, order_seed), so every
+        # dataset constructed with the same CSV + order_seed — in the method,
+        # in _step_eval, in the retrain oracle — sees the SAME remap.
+        # Only the uniform forget_step column is remapped: the Poisson
+        # schedule is a single fixed stress test, not an order axis.
+        if order_seed is not None and "forget_step" in df_full.columns:
+            fg_mask = df_full["split"] == "forget"
+            fg_ids = sorted(df_full.loc[fg_mask, "identity_id"].unique())
+            steps = sorted(df_full.loc[fg_mask, "forget_step"].dropna().unique())
+            if fg_ids and len(steps) > 0:
+                n_steps = len(steps)
+                rng = np.random.RandomState(order_seed)
+                perm = rng.permutation(len(fg_ids))
+                # Contiguous chunks: identity at perm[idx] → step idx // per_step.
+                per_step = int(np.ceil(len(fg_ids) / n_steps))
+                step_of = {}
+                for idx, id_pos in enumerate(perm):
+                    step_of[fg_ids[id_pos]] = int(idx // per_step)
+                df_full.loc[fg_mask, "forget_step"] = (
+                    df_full.loc[fg_mask, "identity_id"].map(step_of)
+                )
 
         # Data root: csv parent's parent (e.g. data/dataset/dataset.csv → data/).
         # Image paths are resolved relative to either the CSV's own directory

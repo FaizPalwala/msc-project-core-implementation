@@ -79,11 +79,13 @@ def _make_loader(
     num_workers: int = 2,
     subset: str = "all",
     schedule: str = "uniform",
+    order_seed: int | None = None,
 ) -> tuple[DataLoader, int]:
     """Build a dual-label DataLoader."""
     if forget_step is not None and split == "forget":
         split = forget_split_name(forget_step, schedule)
-    ds = VirtualIdentityDataset(csv_path, split=split, transform=transform, subset=subset)
+    ds = VirtualIdentityDataset(csv_path, split=split, transform=transform,
+                                subset=subset, order_seed=order_seed)
     return (
         DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
                    num_workers=num_workers, pin_memory=True),
@@ -132,12 +134,14 @@ def retrain_oracle(
     retain_ds = VirtualIdentityDataset(
         csv_path, split="retain", transform=get_train_transform(),
         subset=kwargs.get("subset", "all"),
+        order_seed=kwargs.get("order_seed"),
     )
 
     if forget_step is not None:
         full_forget_ds = VirtualIdentityDataset(
             csv_path, split="forget", transform=get_train_transform(),
             subset=kwargs.get("subset", "all"),
+            order_seed=kwargs.get("order_seed"),
         )
         # Exclude the current schedule batch from the oracle's retain set.
         # Column depends on the schedule: uniform → forget_step, poisson →
@@ -219,12 +223,14 @@ def gradient_ascent(
     f_split = forget_split_name(forget_step, kwargs.get("schedule", "uniform")) if forget_step is not None else "forget"
     f_loader, _ = _make_loader(csv_path, f_split, get_val_transform(),
                                batch_size, shuffle=True,
-                               subset=kwargs.get("subset", "all"))
+                               subset=kwargs.get("subset", "all"),
+                               order_seed=kwargs.get("order_seed"))
     r_loader = None
     if retain_reg:
         r_loader, _ = _make_loader(csv_path, "retain", get_val_transform(),
                                    batch_size, shuffle=True,
-                                   subset=kwargs.get("subset", "all"))
+                                   subset=kwargs.get("subset", "all"),
+                                   order_seed=kwargs.get("order_seed"))
 
     optimizer = torch.optim.SGD(
         unlearn_model.parameters(), lr=ga_lr, momentum=0.9,
@@ -328,6 +334,7 @@ def successive_random_relabelling(
     forget_ds = VirtualIdentityDataset(
         csv_path, split=f_split, transform=get_train_transform(),
         subset=kwargs.get("subset", "all"),
+        order_seed=kwargs.get("order_seed"),
     )
     relabelled = _RelabelledDataset(forget_ds, num_classes=identity_classes)
     loader = DataLoader(relabelled, batch_size=batch_size, shuffle=True,
@@ -384,6 +391,7 @@ def fine_tune_retain(
     retain_ds = VirtualIdentityDataset(
         csv_path, split="retain", transform=get_train_transform(),
         subset=kwargs.get("subset", "all"),
+        order_seed=kwargs.get("order_seed"),
     )
     loader = DataLoader(retain_ds, batch_size=batch_size, shuffle=True,
                         num_workers=resolve_num_workers(), pin_memory=True)

@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _loader(csv, split, transform, batch_size, shuffle=False, num_workers=resolve_num_workers(), subset="all"):
-    ds = VirtualIdentityDataset(csv, split=split, transform=transform, subset=subset)
+def _loader(csv, split, transform, batch_size, shuffle=False, num_workers=resolve_num_workers(), subset="all", order_seed=None):
+    ds = VirtualIdentityDataset(csv, split=split, transform=transform, subset=subset, order_seed=order_seed)
     return DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
                       num_workers=num_workers, pin_memory=True), len(ds)
 
@@ -102,7 +102,7 @@ def neg_grad_plus(
 
     f_split = forget_split_name(forget_step, kwargs.get("schedule", "uniform")) if forget_step is not None else "forget"
     subset_ = kwargs.get("subset", "all")
-    f_loader, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_)
+    f_loader, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_, order_seed=kwargs.get("order_seed"))
     r_loader, _ = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True, subset=subset_)
 
     criterion = nn.CrossEntropyLoss()
@@ -219,7 +219,7 @@ def masked_small_gradients(
 
     f_split = forget_split_name(forget_step, kwargs.get("schedule", "uniform")) if forget_step is not None else "forget"
     subset_ = kwargs.get("subset", "all")
-    f_loader, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_)
+    f_loader, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_, order_seed=kwargs.get("order_seed"))
     r_loader, _ = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True, subset=subset_)
     criterion = nn.CrossEntropyLoss()
 
@@ -328,7 +328,7 @@ def convolution_transpose(
 
     f_split = forget_split_name(forget_step, kwargs.get("schedule", "uniform")) if forget_step is not None else "forget"
     subset_ = kwargs.get("subset", "all")
-    f_loader, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_)
+    f_loader, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_, order_seed=kwargs.get("order_seed"))
     r_loader, _ = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True, subset=subset_)
     criterion = nn.CrossEntropyLoss()
     kl_crit = nn.KLDivLoss(reduction="batchmean", log_target=True)
