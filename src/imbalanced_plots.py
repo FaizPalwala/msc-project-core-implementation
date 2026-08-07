@@ -3,7 +3,7 @@
 
 Reads ``single_shot_aggregated.json`` and the imbalanced CSV, then produces
 publication‑quality PNGs analysing whether unlearning is **equitable** across
-the long‑tail data distribution (high‑popularity ≈ 85 images vs low ≈ 20).
+the long‑tail data distribution (high‑popularity ≈ 82 train images vs low ≈ 16).
 
 Usage:
     python src/imbalanced_plots.py \\
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 BINS = ["high", "medium", "low"]
 BIN_COLOURS = {"high": "#e74c3c", "medium": "#f39c12", "low": "#3498db"}
-BIN_LABELS = {"high": "High (~85 imgs)", "medium": "Medium (~40 imgs)", "low": "Low (~20 imgs)"}
+BIN_LABELS = {"high": "High (82 imgs)", "medium": "Medium (41 imgs)", "low": "Low (16 imgs)"}
 BAR_WIDTH = 0.22
 _, TEXTLIKE_RC = plt.subplots()
 plt.close()
@@ -220,7 +220,18 @@ def plot_auc_vs_images(df: pd.DataFrame, aggregated: dict, out_dir: Path) -> Non
         logger.info("  [skip] no per‑bin MIA data for scatter")
         return
 
-    bin_to_imgs = {"high": 85, "medium": 40, "low": 20}
+    # Bin x-values from the CSV itself (per-identity counts on the forget
+    # split) — tracks the dataset (85/40/20 at 600-id, 82/41/16 at 750-id)
+    # instead of hardcoding.
+    bin_to_imgs = {}
+    if "popularity_bin" in df.columns:
+        for bin_name in BINS:
+            sub = forget_df[forget_df["popularity_bin"] == bin_name]
+            counts = sub.groupby("identity_id").size()
+            bin_to_imgs[bin_name] = int(counts.median()) if len(counts) else None
+    for bin_name in BINS:
+        if bin_to_imgs.get(bin_name) is None:
+            bin_to_imgs[bin_name] = {"high": 82, "medium": 41, "low": 16}[bin_name]
     points = []
     for method in methods:
         for bin_name in BINS:
