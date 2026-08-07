@@ -82,12 +82,18 @@ echo "  HP search job: $HP_JOB"
 # ── Stage 3: Iterative (after single-shot, uses best configs) ───────────
 # Balanced only — imbalanced has no forget_step schedule to iterate over
 # (its experimental axis is the popularity gradient, not time).
+# ITER_SCHEDULE=poisson runs the seeded-Poisson stress test instead of the
+# uniform schedule (results land in $OUT/iterative_poisson — the two
+# schedules are separate experiments and must not clobber each other).
+ITER_SCHEDULE="${ITER_SCHEDULE:-uniform}"
+ITER_SUBDIR="iterative"
+[ "$ITER_SCHEDULE" = "poisson" ] && ITER_SUBDIR="iterative_poisson"
 if [ "$DATASET" = "balanced" ]; then
-    echo "[$(date)] Submitting iterative (dependency: $SINGLE_JOB:$HP_JOB)…"
+    echo "[$(date)] Submitting iterative ($ITER_SCHEDULE; dependency: $SINGLE_JOB:$HP_JOB)…"
     ITER_JOB=$(sbatch --parsable \
         --dependency=afterok:$SINGLE_JOB:$HP_JOB \
         "$PROJECT_DIR/scripts/slurm_iterative.sh" \
-        "$CSV" "$MODEL" "$OUT/iterative")
+        "$CSV" "$MODEL" "$OUT/$ITER_SUBDIR" "$ITER_SCHEDULE")
     echo "  Iterative job: $ITER_JOB"
 
     # ── Stage 4: Stability plots (after iterative) ──────────────────────
@@ -95,8 +101,8 @@ if [ "$DATASET" = "balanced" ]; then
     STAB_JOB=$(sbatch --parsable \
         --dependency=afterok:$ITER_JOB \
         "$PROJECT_DIR/scripts/slurm_stability.sh" \
-        "$OUT/iterative/iterative_combined_aggregated.csv" \
-        "$OUT/iterative/plots" \
+        "$OUT/$ITER_SUBDIR/iterative_combined_aggregated.csv" \
+        "$OUT/$ITER_SUBDIR/plots" \
         "$OUT/single_shot/single_shot_per_identity.csv" \
         "$OUT/single_shot/single_shot_demographic.csv")
     echo "  Stability job: $STAB_JOB"

@@ -10,7 +10,9 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-# Usage: sbatch scripts/slurm_iterative.sh <csv> <model> <out>
+# Usage: sbatch scripts/slurm_iterative.sh <csv> <model> <out> [schedule]
+#   schedule: uniform (default) | poisson — schedule column to iterate
+#   (forget_step_N vs forget_step_poisson_N); poisson is balanced-only.
 
 # ── Repo root ────────────────────────────────────────────────────────────
 # Under sbatch, $0 points at the spool copy (/var/spool/slurmd/...), so
@@ -41,6 +43,7 @@ mkdir -p "$LOG_DIR"
 CSV="${1:-$CSV_DEFAULT}"
 MODEL="${2:-$OUT_BASE/checkpoints/original_model_best.pt}"
 OUT="${3:-$OUT_BASE/iterative}"
+SCHEDULE="${4:-uniform}"
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Iterative protocol → $OUT"
@@ -50,9 +53,10 @@ bash "$PROJECT_DIR/scripts/gpu_preflight.sh" || exit 1
 
 python src/iterative.py \
     --csv "$CSV" --model "$MODEL" --out "$OUT" \
-    --n_steps 15 --mode cumulative \
+    --mode cumulative \
     --seed 42 --scale 1.0 \
     --subset holdout \
+    --schedule "$SCHEDULE" \
     --re_emergence 5 10 15 2>&1
 
 echo "[$(date)] Iterative complete."
