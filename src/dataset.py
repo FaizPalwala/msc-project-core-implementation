@@ -5,27 +5,39 @@ Reads dataset.csv / dataset.parquet (balanced) or dataset_imbalanced.csv /
 dataset_imbalanced.parquet, applies configurable transforms, and returns
 (image, identity_label, age_label) for each sample.
 
-Standardised schema (final, 2026)
-─────────────────────────────────
-Balanced (11 columns): image_path, identity_id, age_group (0-3), age,
-gender (0/1), split (retain/test/forget), forget_step (-1 non-forget),
-forget_variant (-1 non-forget), arcface_similarity, laplacian_variance,
-detection_confidence.
+Standardised schema (v1.1, 750-id redesign)
+───────────────────────────────────────────
+Balanced (12 columns): image_path, identity_id, age_group (0-3), age,
+gender (0/1), split (retain/forget), forget_step (-1 non-forget),
+forget_step_poisson (-1 non-forget), image_subset (train/holdout),
+arcface_similarity, laplacian_variance, detection_confidence.
 
-Imbalanced (13 columns): same 11 + popularity_bin (str) +
-images_per_identity (int).
+Imbalanced (12 columns): image_path, identity_id, age_group (0-3), age,
+gender (0/1), split (retain/forget), image_subset (train/holdout),
+arcface_similarity, laplacian_variance, detection_confidence,
+popularity_bin (str), images_per_identity (int).
+— no schedule columns (forget_step*): the imbalanced axis is the
+  popularity gradient, not time.
 
 identity_id is the primary key (renamed from clusterid).  File format
 (CSV or Parquet) is auto-detected from the file extension.
 
 Splits
 ──────
-  retain          — training data (450 identities in full config)
-  test            — held-out identities, never trained on (90 identities)
-  forget          — all identities scheduled for deletion (60 identities)
-  retain+forget   — full training set (retain + forget, 510 identities)
-  forget_step_N   — images belonging to forget step N (4 identities each, 15 steps)
-  forget_variant_N_M — images for variant M within forget step N (1 identity)
+  retain              — training data (675 identities in full config)
+  forget              — all identities scheduled for deletion (75 identities)
+  retain+forget       — full training set (750 identities)
+  forget_step_N       — uniform-schedule batch N (5 identities each, 15 steps)
+  forget_step_poisson_N — seeded-Poisson-schedule batch N (variable size)
+  Per-identity selection: use identity_id filtering (see evaluate.py),
+  not the removed forget_variant_N_M split.
+
+The two schedule columns (forget_step, forget_step_poisson) are
+balanced-only, complete projections over the same 75-id forget set:
+  forget_step         — uniform (5 ids/step × 15), ordinal-safe, multi-seed μ±σ
+  forget_step_poisson — seeded-Poisson (λ=5, single fixed schedule),
+                        variable batch sizes; GDPR-arrival stress test
+A retain row is -1 in both.  The imbalanced CSV has neither column.
 
 Transforms
 ──────────
@@ -100,6 +112,33 @@ def infer_forget_schedule(csv_path: str | Path) -> tuple[int, int]:
     per_step = int(counts.mode().iloc[0]) if len(counts) else 4
     return n_steps, per_step
 
+
+def forget_split_name(forget_step: int, schedule: str = "uniform") -> str:
+    """Split string for schedule batch N: 'forget_step_N' or 'forget_step_poisson_N'.
+
+    All unlearning methods build their forget-set split from this helper so
+    the schedule (uniform vs seeded-Poisson) flows through consistently.
+    """
+    if schedule == "poisson":
+        return f"forget_step_poisson_{forget_step}"
+    return f"forget_step_{forget_step}"
+
+
+def cumulative_forgotten_count(csv_path: str | Path, step: int,
+                               schedule: str = "uniform") -> int:
+    """Number of forget identities processed through step (inclusive).
+
+    Analysis axis per Shen et al. (2025): compare schedules by cumulative
+    forgotten count, never raw step index.  For the uniform schedule this is
+    (step+1) × ids/step; for Poisson it counts identities whose poisson
+    batch index ≤ step (variable batch sizes).
+    """
+    import pandas as pd
+    col = "forget_step_poisson" if schedule == "poisson" else "forget_step"
+    df = pd.read_csv(csv_path, usecols=["split", "identity_id", col])
+    fg = df[df["split"] == "forget"].dropna(subset=[col])
+    return int(fg[fg[col] <= step]["identity_id"].nunique())
+
 # ── Transforms ────────────────────────────────────────────────────────────────
 
 
@@ -135,19 +174,19 @@ class VirtualIdentityDataset(Dataset):
     """SFHQ-InstantID dataset with identity-labelled clusters.
 
     Each sample returns (image, identity_label, age_label).  Identity
-    labels are cluster IDs (0–599).  Age labels are proxy model-estimated
+    labels are cluster IDs (0–N−1).  Age labels are proxy model-estimated
     age groups (0–3).
 
     Args:
         csv_path:  Path to dataset.csv or dataset_imbalanced.csv.
-        split:     One of 'retain', 'test', 'forget', 'retain+forget',
-                   'forget_step_N', or 'forget_variant_N_M'.
+        split:     One of 'retain', 'forget', 'retain+forget',
+                   'forget_step_N', or 'forget_step_poisson_N'.
         transform: torchvision transform (default: val_transform at 224).
         img_size:  Target resolution (default 224, matching pretrained
                    ResNet-18 input size).
     """
 
-    VALID_SPLITS: set[str] = {"retain", "test", "forget", "retain+forget"}
+    VALID_SPLITS: set[str] = {"retain", "forget", "retain+forget"}
 
     def __init__(
         self,
@@ -173,15 +212,24 @@ class VirtualIdentityDataset(Dataset):
         # ── Split filter ──────────────────────────────────────────────────
         if split == "retain+forget":
             df = df_full[df_full["split"].isin(["retain", "forget"])].copy()
-        elif split.startswith("forget_variant_"):
-            # Format: forget_variant_{step}_{variant}
-            parts = split.split("_")
-            step, variant = int(parts[2]), int(parts[3])
-            df = df_full[
-                (df_full["forget_step"] == step)
-                & (df_full["forget_variant"] == variant)
-            ].copy()
+        elif split.startswith("forget_step_poisson_"):
+            # Format: forget_step_poisson_{N} — seeded-Poisson schedule batch.
+            if "forget_step_poisson" not in df_full.columns:
+                raise ValueError(
+                    f"Split '{split}' requires a 'forget_step_poisson' column, "
+                    f"but {csv_path.name} has none. The Poisson schedule is "
+                    f"balanced-only — the imbalanced CSV has no time axis."
+                )
+            step = int(split.split("_")[-1])
+            df = df_full[df_full["forget_step_poisson"] == step].copy()
         elif split.startswith("forget_step_"):
+            # Format: forget_step_{N} — uniform-schedule batch.
+            if "forget_step" not in df_full.columns:
+                raise ValueError(
+                    f"Split '{split}' requires a 'forget_step' column, "
+                    f"but {csv_path.name} has none. The uniform schedule is "
+                    f"balanced-only — the imbalanced CSV has no time axis."
+                )
             step = int(split.split("_")[-1])
             df = df_full[df_full["forget_step"] == step].copy()
         elif split in self.VALID_SPLITS:
@@ -190,7 +238,7 @@ class VirtualIdentityDataset(Dataset):
             raise ValueError(
                 f"Unknown split '{split}'. "
                 f"Choose from {self.VALID_SPLITS}, "
-                f"'forget_step_N', or 'forget_variant_N_M'."
+                f"'forget_step_N', or 'forget_step_poisson_N'."
             )
 
         # ── Subset filter (per-image train/holdout) ───────────────────────
