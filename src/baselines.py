@@ -125,9 +125,19 @@ def retrain_oracle(
     forget_step: int | None = None,
     identity_classes: int = 600,
     age_classes: int = 4,
+    exclude_identity_ids: list[int] | None = None,
     **kwargs,
 ) -> dict:
-    """Retrain from scratch on retain set (gold standard)."""
+    """Retrain from scratch on retain set (gold standard).
+
+    Two exclusion modes (mutually exclusive):
+      - forget_step=N: exclude schedule batch N from the forget set
+        (the oracle for the global unlearning task).
+      - exclude_identity_ids=[...]: exclude a specific identity set from
+        the forget set — used for PER-BIN oracles (Protocol B): retrain
+        excluding only one popularity bin's forget identities, so the
+        oracle for bin B still trains on the other bins' forgets.
+    """
     torch.manual_seed(seed)
     t0 = time.time()
 
@@ -137,7 +147,21 @@ def retrain_oracle(
         order_seed=kwargs.get("order_seed"),
     )
 
-    if forget_step is not None:
+    if exclude_identity_ids is not None:
+        full_forget_ds = VirtualIdentityDataset(
+            csv_path, split="forget", transform=get_train_transform(),
+            subset=kwargs.get("subset", "all"),
+            order_seed=kwargs.get("order_seed"),
+        )
+        # Exclude ONLY the given identities — the oracle for bin B keeps
+        # the other bins' forget identities in its training set (they were
+        # not requested for deletion in that bin's counterfactual).
+        keep_mask = ~full_forget_ds.df["identity_id"].isin(exclude_identity_ids)
+        if keep_mask.any():
+            extra = Subset(full_forget_ds,
+                           keep_mask.index[keep_mask].tolist())
+            retain_ds = ConcatDataset([retain_ds, extra])
+    elif forget_step is not None:
         full_forget_ds = VirtualIdentityDataset(
             csv_path, split="forget", transform=get_train_transform(),
             subset=kwargs.get("subset", "all"),
