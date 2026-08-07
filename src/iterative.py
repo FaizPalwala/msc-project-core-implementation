@@ -77,6 +77,7 @@ def _step_eval(
     forget_step: int,
     subset: str = "all",
     schedule: str = "uniform",
+    order_seed: int | None = None,
 ) -> dict[str, Any]:
     """Evaluate model after unlearning one forget step.
 
@@ -102,15 +103,16 @@ def _step_eval(
     drift = _weight_l2(model, original_model)
 
     # Step-local forget accuracy (this step's identities only), on the
-    # schedule's own batch column (uniform vs poisson).
+    # schedule's own batch column (uniform vs poisson).  order_seed keeps
+    # the step-local eval consistent with the permutation the method saw.
     step_split = forget_split_name(forget_step, schedule)
     step_ds_hold = VirtualIdentityDataset(
         csv_path, split=step_split,
-        transform=get_val_transform(), subset="holdout",
+        transform=get_val_transform(), subset="holdout", order_seed=order_seed,
     )
     step_ds_train = VirtualIdentityDataset(
         csv_path, split=step_split,
-        transform=get_val_transform(), subset="train",
+        transform=get_val_transform(), subset="train", order_seed=order_seed,
     )
     step_forget_acc = float("nan")
     step_forget_train_acc = float("nan")
@@ -156,6 +158,7 @@ def run_iterative(
     re_emergence_checks: list[int] | None = None,
     subset: str = "all",
     schedule: str = "uniform",
+    order_seed: int | None = None,
 ) -> list[dict[str, Any]]:
     """Run one unlearning method over sequential forget steps.
 
@@ -163,6 +166,11 @@ def run_iterative(
     schedule='poisson' iterates forget_step_poisson_N (variable batch sizes,
     seeded single schedule — the GDPR-arrival stress test).  All analysis is
     keyed on cumulative_forgotten (Shen et al. 2025), never raw step index.
+
+    order_seed (order-stability, P3): a deterministic permutation of WHICH
+    forget identities sit at WHICH uniform step.  Running the same pretrained
+    model with different order_seeds and reporting μ±σ isolates order
+    sensitivity — the same pretrained checkpoint, no retraining.
 
     Returns list of per-step result dicts.
     """
@@ -210,10 +218,11 @@ def run_iterative(
     # Baseline (step 0)
     logger.info(f"\n  [Step 0 / baseline] Evaluating original model…")
     baseline = _step_eval(original_model, original_model, csv_path, device,
-                          forget_step=0, subset=subset, schedule=schedule)
+                          forget_step=0, subset=subset, schedule=schedule,
+                          order_seed=order_seed)
     baseline.update({
         "step": 0, "method": method_name, "mode": mode,
-        "schedule": schedule,
+        "schedule": schedule, "order_seed": order_seed,
         "cumulative_forgotten": 0,
         "step_time_s": 0.0, "cumulative_time_s": 0.0,
         "is_baseline": True,
@@ -253,6 +262,7 @@ def run_iterative(
             metrics = _step_eval(
                 current_model, original_model, csv_path, device,
                 forget_step=step, subset=subset, schedule=schedule,
+                order_seed=order_seed,
             )
             record = {
                 "step": step + 1,
@@ -260,6 +270,7 @@ def run_iterative(
                 "method": method_name,
                 "mode": mode,
                 "schedule": schedule,
+                "order_seed": order_seed,
                 # Analysis axis per Shen et al. (2025): cumulative forgotten
                 # count, never raw step index (poisson batch sizes vary).
                 "cumulative_forgotten": cumulative_forgotten_count(
@@ -350,6 +361,7 @@ def run_all_iterative(
     re_emergence_checks: list[int] | None = None,
     subset: str = "all",
     schedule: str = "uniform",
+    order_seed: int | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Run iterative unlearning for all methods."""
     method_configs = load_method_configs(scale=scale)
@@ -370,10 +382,21 @@ def run_all_iterative(
     n_id_classes = infer_identity_classes(csv_path)
     logger.info(f"  Identity classes (inferred from CSV): {n_id_classes}")
 
+    # Order-stability (P3) is defined on the uniform schedule: remapping the
+    # Poisson stress test's batch composition would defeat its purpose (a
+    # single fixed GDPR-arrival schedule, recorded in the manifest).
+    if order_seed is not None and schedule != "uniform":
+        raise ValueError(
+            "order_seed is only valid with schedule='uniform' — order-stability "
+            "measures sensitivity to forget ORDER under the uniform schedule; "
+            "the Poisson schedule is a single fixed stress test."
+        )
+
     for method in methods:
         cfg = prepare_method_call(method_configs.get(method, {}),
                                   identity_classes=n_id_classes,
-                                  schedule=schedule)  # pins subset + classes + schedule
+                                  schedule=schedule,
+                                  order_seed=order_seed)  # pins subset + classes + schedule + order
         records = run_iterative(
             method_name=method,
             method_cfg=cfg,
@@ -388,6 +411,7 @@ def run_all_iterative(
             re_emergence_checks=re_emergence_checks,
             subset=subset,
             schedule=schedule,
+            order_seed=order_seed,
         )
         all_results[method] = records
 
@@ -411,7 +435,7 @@ def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
 
 
 _FLAT_COLS = [
-    "step", "method", "mode", "schedule", "cumulative_forgotten",
+    "step", "method", "mode", "schedule", "order_seed", "cumulative_forgotten",
     "retain_acc", "forget_acc",
     "step_forget_acc", "step_forget_train_acc",
     "retain_age_acc", "mia_mean_auc", "mia_max_auc", "forget_advantage",
@@ -581,6 +605,12 @@ def main() -> None:
                         help="Forget schedule: 'uniform' (forget_step_N) or "
                              "'poisson' (forget_step_poisson_N, GDPR-arrival "
                              "stress test, balanced-only)")
+    parser.add_argument("--order_seed",        type=int, default=None,
+                        help="Order-stability permutation (uniform schedule "
+                             "only): which forget identities sit at which "
+                             "step.  Different seeds per run → μ±σ across "
+                             "forget orderings on the same pretrained model "
+                             "(P3, no retraining).")
     args = parser.parse_args()
 
     if args.n_seeds > 1:
@@ -588,6 +618,11 @@ def main() -> None:
             seed = args.seed + si
             seed_dir = f"{args.out}/seed_{seed}"
             logger.info(f"\n{'#'*70}\n  SEED {si+1}/{args.n_seeds} (seed={seed})\n{'#'*70}")
+            # Order-stability (P3): each seed gets a DIFFERENT forget
+            # ordering (order_seed = seed), on the SAME pretrained model —
+            # μ±σ across seeds then isolates order sensitivity.  If the user
+            # pinned --order_seed explicitly, offset it per seed instead.
+            order_seed = args.order_seed + si if args.order_seed is not None else seed
             run_all_iterative(
                 csv_path=args.csv,
                 model_path=args.model,
@@ -602,6 +637,7 @@ def main() -> None:
                 re_emergence_checks=args.re_emergence or None,
                 subset=args.subset,
                 schedule=args.schedule,
+                order_seed=order_seed,
             )
         # After all seeds complete, aggregate into μ ± σ
         aggregate_iterative_seeds(args.out)
@@ -620,6 +656,7 @@ def main() -> None:
             re_emergence_checks=args.re_emergence or None,
             subset=args.subset,
             schedule=args.schedule,
+            order_seed=args.order_seed,
         )
 
 
