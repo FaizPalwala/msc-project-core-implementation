@@ -5,6 +5,7 @@ Reads the evaluation artifacts produced by the pipeline:
   - results/single_shot/single_shot_aggregated.json   (per-method μ ± σ, p-values)
   - results/iterative/iterative_combined_aggregated.csv (per-method×step μ ± σ)
   - results/iterative/plots/stability_summary.csv      (summary statistics)
+    (+ iterative_poisson/ twin lanes — one table per schedule)
 
 and renders three artefacts in `results/report/`:
   - report.tex   — LaTeX tables (μ ± σ, significance stars, bold bests) for the paper
@@ -111,24 +112,39 @@ def _load_single_shot(results_dir: Path) -> dict[str, Any] | None:
     return data
 
 
-def _load_iterative_aggregated(results_dir: Path) -> pd.DataFrame | None:
-    path = results_dir / "iterative" / "iterative_combined_aggregated.csv"
-    if not path.exists():
-        logger.warning(f"[Report] Iterative aggregated CSV not found: {path}")
-        return None
-    df = pd.read_csv(path)
-    logger.info(f"[Report] Loaded iterative aggregation: {path} ({len(df)} rows)")
-    return df
+def _load_iterative_aggregated(results_dir: Path) -> dict[str, pd.DataFrame]:
+    """Load per-schedule iterative aggregated CSVs.
+
+    Balanced runs produce one aggregated CSV per schedule lane:
+      results/iterative/iterative_combined_aggregated.csv         (uniform)
+      results/iterative_poisson/iterative_combined_aggregated.csv (poisson)
+    Returns {schedule_name: df} so the report renders ONE table per
+    schedule (grouping by method only would collapse the two lanes).
+    """
+    out: dict[str, pd.DataFrame] = {}
+    for lane in sorted(results_dir.glob("iterative*/iterative_combined_aggregated.csv")):
+        schedule = lane.parent.name  # "iterative" → uniform, "iterative_poisson" → poisson
+        schedule_name = "poisson" if "poisson" in schedule else "uniform"
+        df = pd.read_csv(lane)
+        out[schedule_name] = df
+        logger.info(f"[Report] Loaded iterative aggregation: {lane} ({len(df)} rows, {schedule_name})")
+    if not out:
+        logger.warning(f"[Report] No iterative/iterative_poisson aggregated CSVs in {results_dir}")
+    return out
 
 
-def _load_stability_summary(results_dir: Path) -> pd.DataFrame | None:
-    path = results_dir / "iterative" / "plots" / "stability_summary.csv"
-    if not path.exists():
-        logger.warning(f"[Report] Stability summary not found: {path}")
-        return None
-    df = pd.read_csv(path)
-    logger.info(f"[Report] Loaded stability summary: {path} ({len(df)} rows)")
-    return df
+def _load_stability_summary(results_dir: Path) -> dict[str, pd.DataFrame]:
+    """Load per-schedule stability summary CSVs (same lane glob)."""
+    out: dict[str, pd.DataFrame] = {}
+    for lane in sorted(results_dir.glob("iterative*/plots/stability_summary.csv")):
+        schedule = lane.parents[1].name
+        schedule_name = "poisson" if "poisson" in schedule else "uniform"
+        df = pd.read_csv(lane)
+        out[schedule_name] = df
+        logger.info(f"[Report] Loaded stability summary: {lane} ({len(df)} rows, {schedule_name})")
+    if not out:
+        logger.warning(f"[Report] No stability summaries in {results_dir}")
+    return out
 
 
 def _load_canary(results_dir: Path) -> dict[str, Any] | None:
@@ -235,7 +251,7 @@ def _render_single_shot_latex(data: dict) -> str:
     return "\n".join(lines)
 
 
-def _render_iterative_latex(df: pd.DataFrame) -> str:
+def _render_iterative_latex(df: pd.DataFrame, schedule: str = "uniform") -> str:
     """LaTeX table: final-step per method, μ ± σ from iterative aggregation."""
     if df is None or df.empty:
         return ""
@@ -263,7 +279,8 @@ def _render_iterative_latex(df: pd.DataFrame) -> str:
     lines = [
         "\\begin{table}[ht]",
         "\\centering",
-        "\\caption{Iterative unlearning at final step (mean $\\pm$ std across seeds)}",
+        f"\\caption{{Iterative unlearning at final step ({schedule} schedule; "
+        f"mean $\\pm$ std across seeds)}}",
         "\\label{tab:iterative_final}",
         "\\small",
         "\\begin{tabular}{l" + "c" * len(cols) + "}",
@@ -343,7 +360,7 @@ def _render_single_shot_md(data: dict) -> str:
     return "\n".join(lines)
 
 
-def _render_iterative_md(df: pd.DataFrame) -> str:
+def _render_iterative_md(df: pd.DataFrame, schedule: str = "uniform") -> str:
     if df is None or df.empty:
         return "_No iterative results available._\n"
     final_rows = df.loc[df.groupby("method")["step"].idxmax()].sort_values("method")
@@ -454,8 +471,6 @@ def generate_report(
     out_path.mkdir(parents=True, exist_ok=True)
 
     single_shot = _load_single_shot(results_path)
-    iterative_df = _load_iterative_aggregated(results_path)
-    _stability = _load_stability_summary(results_path)
     canary = _load_canary(results_path)
 
     single_shot_data: dict[str, Any] = single_shot or {}
@@ -469,10 +484,13 @@ def generate_report(
     md_parts.append(_render_single_shot_md(single_shot_data))
     _export_single_shot_csv(single_shot_data, out_path / "single_shot_table.csv")
 
-    # Iterative
-    tex_parts.append(_render_iterative_latex(iterative_df))
-    md_parts.append("\n# Iterative Results (final step)")
-    md_parts.append(_render_iterative_md(iterative_df))
+    # Iterative — one table per schedule lane (uniform, poisson)
+    iterative_by_schedule = _load_iterative_aggregated(results_path)
+    _stability = _load_stability_summary(results_path)
+    for schedule, it_df in sorted(iterative_by_schedule.items()):
+        tex_parts.append(_render_iterative_latex(it_df, schedule))
+        md_parts.append(f"\n# Iterative Results — {schedule} schedule (final step)")
+        md_parts.append(_render_iterative_md(it_df, schedule))
 
     # Canary (markdown only — verification detail, not a headline table)
     md_parts.append("\n# Canary Verification (ground-truth deletion proof)")
