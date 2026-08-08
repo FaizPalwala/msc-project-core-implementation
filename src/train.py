@@ -235,7 +235,7 @@ def train(
     tst_loader = DataLoader(test_ds, batch_size=128, shuffle=False,
                             num_workers=resolve_num_workers(), pin_memory=True)
 
-    logger.info(f"Train: {len(trn_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
+    logger.info(f"Train: {len(trn_ds)} | Val: {len(val_ds)} | Holdout: {len(test_ds)}")
 
     # ── Model ─────────────────────────────────────────────────────────────
     model = build_dual_head_resnet18(
@@ -345,8 +345,8 @@ def train(
     elapsed = time.time() - t0
     logger.info(f"\n[OK] Training complete in {elapsed / 60:.1f} min")
     logger.info(f"     Best val identity acc : {best_val_id_acc:.4f}")
-    logger.info(f"     Final test identity acc: {tst_res['id_acc']:.4f}")
-    logger.info(f"     Final test age acc     : {tst_res['age_acc']:.4f}")
+    logger.info(f"     Final holdout identity acc: {tst_res['id_acc']:.4f}")
+    logger.info(f"     Final holdout age acc     : {tst_res['age_acc']:.4f}")
     logger.info(f"     Saved to: {save_path}")
     return model, history
 
