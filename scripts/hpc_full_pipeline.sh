@@ -2,11 +2,28 @@
 # ==========================================
 # hpc_full_pipeline.sh — Full unlearning pipeline on Aire HPC
 # ==========================================
-# Chains: train → single_shot → iterative → stability
-# HP search can be submitted in parallel (see comments below).
+# ONE submission runs the whole suite at the designed parallelism:
+#
+#   train ──→ single_shot ∥ hparam×8 ──→ single_shot_best ──┐
+#                     │                                       ├──→ report
+#                     ├─→ iterative(uniform) → stability     ┘
+#                     ├─→ iterative(poisson) → stability        (balanced lanes)
+#                     └─→ canary (independent)
+#
+#   imbalanced replaces the schedule lanes with:
+#       single_shot_best → per-bin oracles (B) ∥ Protocol C select
+#                        → budget sweep (C) → report
+#
+# The two schedule lanes (uniform + poisson) run IN PARALLEL after the
+# shared upstream stages; they write separate dirs (iterative/ vs
+# iterative_poisson/) and never clobber each other.  HP search is one
+# job per method, all parallel, each writing its own {method}_best_config.json.
 #
 # Usage:
-#   bash scripts/hpc_full_pipeline.sh
+#   bash scripts/hpc_full_pipeline.sh                    # balanced, both schedules
+#   DATASET=imbalanced bash scripts/hpc_full_pipeline.sh
+#   SCHEDULES=uniform bash scripts/hpc_full_pipeline.sh  # single-schedule override
+#   HP_METHODS="ng_plus ft" bash scripts/hpc_full_pipeline.sh
 # ==========================================
 
 set -euo pipefail
@@ -42,8 +59,12 @@ else
 fi
 OUT="$PROJECT_DIR/results/$DATASET"              # namespace by dataset
 MODEL="$OUT/checkpoints/original_model_best.pt"
+# Schedule lanes to run (balanced only).  Default: BOTH in parallel.
+# Override with SCHEDULES="uniform" or SCHEDULES="poisson".
+SCHEDULES="${SCHEDULES:-uniform poisson}"
 echo "[$(date)] Pipeline — dataset=$DATASET ($CSV)"
 echo "  Output → $OUT"
+echo "  Schedule lanes (balanced): $SCHEDULES"
 
 # ── Stage 1: Train ──────────────────────────────────────────────────────
 echo "[$(date)] Submitting train job…"
@@ -99,44 +120,46 @@ SINGLE_BEST_JOB=$(sbatch --parsable \
     "$CSV" "$MODEL" "$OUT/single_shot_best" "$BEST_DIR")
 echo "  Single-shot-best job: $SINGLE_BEST_JOB"
 
-# ── Stage 3: Iterative (after single-shot + HP, uses best configs) ──────
+# ── Stage 3: Iterative + stability — one PARALLEL LANE per schedule ─────
 # Balanced only — imbalanced has no forget_step schedule to iterate over
 # (its experimental axis is the popularity gradient, not time).
-# ITER_SCHEDULE=poisson runs the seeded-Poisson stress test instead of the
-# uniform schedule (results land in $OUT/iterative_poisson — the two
-# schedules are separate experiments and must not clobber each other).
-ITER_SCHEDULE="${ITER_SCHEDULE:-uniform}"
-ITER_SUBDIR="iterative"
-[ "$ITER_SCHEDULE" = "poisson" ] && ITER_SUBDIR="iterative_poisson"
+# Uniform and Poisson are independent experiments: each lane depends on
+# the shared upstream (single-shot + all HP jobs, so best configs are
+# guaranteed by afterok) and writes its own dir.  The report waits on
+# ALL lanes.
+STAB_DEPS=""
 if [ "$DATASET" = "balanced" ]; then
-    echo "[$(date)] Submitting iterative ($ITER_SCHEDULE; dependency: $SINGLE_JOB:$HP_DEPS)…"
-    ITER_JOB=$(sbatch --parsable \
-        --dependency=afterok:$SINGLE_JOB:$HP_DEPS \
-        "$PROJECT_DIR/scripts/slurm_iterative.sh" \
-        "$CSV" "$MODEL" "$OUT/$ITER_SUBDIR" "$ITER_SCHEDULE" "$BEST_DIR")
-    echo "  Iterative job: $ITER_JOB"
+    for SCHEDULE in $SCHEDULES; do
+        ITER_SUBDIR="iterative"
+        [ "$SCHEDULE" = "poisson" ] && ITER_SUBDIR="iterative_poisson"
+        echo "[$(date)] Submitting iterative($SCHEDULE; dependency: $SINGLE_JOB:$HP_DEPS)…"
+        ITER_JOB=$(sbatch --parsable \
+            --dependency=afterok:$SINGLE_JOB:$HP_DEPS \
+            "$PROJECT_DIR/scripts/slurm_iterative.sh" \
+            "$CSV" "$MODEL" "$OUT/$ITER_SUBDIR" "$SCHEDULE" "$BEST_DIR")
+        echo "  Iterative($SCHEDULE) job: $ITER_JOB"
 
-    # ── Stage 4: Stability plots (after iterative) ──────────────────────
-    echo "[$(date)] Submitting stability (dependency: $ITER_JOB)…"
-    STAB_JOB=$(sbatch --parsable \
-        --dependency=afterok:$ITER_JOB \
-        "$PROJECT_DIR/scripts/slurm_stability.sh" \
-        "$OUT/$ITER_SUBDIR/iterative_combined_aggregated.csv" \
-        "$OUT/$ITER_SUBDIR/plots" \
-        "$OUT/single_shot/single_shot_per_identity.csv" \
-        "$OUT/single_shot/single_shot_demographic.csv")
-    echo "  Stability job: $STAB_JOB"
+        echo "[$(date)] Submitting stability($SCHEDULE; dependency: $ITER_JOB)…"
+        STAB_JOB=$(sbatch --parsable \
+            --dependency=afterok:$ITER_JOB \
+            "$PROJECT_DIR/scripts/slurm_stability.sh" \
+            "$OUT/$ITER_SUBDIR/iterative_combined_aggregated.csv" \
+            "$OUT/$ITER_SUBDIR/plots" \
+            "$OUT/single_shot/single_shot_per_identity.csv" \
+            "$OUT/single_shot/single_shot_demographic.csv")
+        echo "  Stability($SCHEDULE) job: $STAB_JOB"
+        STAB_DEPS="$STAB_DEPS:$STAB_JOB"
+    done
+    STAB_DEPS="${STAB_DEPS#:}"
 else
     echo "[$(date)] Skipping iterative + stability (imbalanced has no schedule axis)"
-    ITER_JOB=""
-    STAB_JOB=""
 
     # ── Imbalanced stress-test chain (Protocols B + C) ─────────────────
     # B: per-bin retrain oracles — one oracle PER bin (the oracle changes
     #    per bin: bin-B's oracle still trains on the other bins' forgets).
     # C: dynamic selection — 1 best method per category (baseline/SOTA/
     #    novel) by UF score from single_shot_best; the 3 picks feed the
-    #    budget sweep (deferred until upstream results land).
+    #    budget sweep.
     echo "[$(date)] Submitting per-bin oracles (Protocol B; dependency: $SINGLE_BEST_JOB)…"
     ORACLE_JOB=$(sbatch --parsable \
         --dependency=afterok:$SINGLE_BEST_JOB \
@@ -171,12 +194,12 @@ CANARY_JOB=$(sbatch --parsable \
     "$CSV" "$OUT/canary")
 echo "  Canary job: $CANARY_JOB"
 
-# ── Stage 6: Report (after stability + single_shot_best + canary) ───────
+# ── Stage 6: Report (after ALL lanes + single_shot_best + canary) ───────
 REPORT_DEPS="$CANARY_JOB:$SINGLE_BEST_JOB"
-[ -n "$STAB_JOB" ] && REPORT_DEPS="$STAB_JOB:$REPORT_DEPS"
-[ -n "$ORACLE_JOB" ] && REPORT_DEPS="$ORACLE_JOB:$REPORT_DEPS"
-[ -n "$SELC_JOB" ] && REPORT_DEPS="$SELC_JOB:$REPORT_DEPS"
-[ -n "$SWEEP_JOB" ] && REPORT_DEPS="$SWEEP_JOB:$REPORT_DEPS"
+[ -n "$STAB_DEPS" ] && REPORT_DEPS="$STAB_DEPS:$REPORT_DEPS"
+[ -n "${ORACLE_JOB:-}" ] && REPORT_DEPS="$ORACLE_JOB:$REPORT_DEPS"
+[ -n "${SELC_JOB:-}" ] && REPORT_DEPS="$SELC_JOB:$REPORT_DEPS"
+[ -n "${SWEEP_JOB:-}" ] && REPORT_DEPS="$SWEEP_JOB:$REPORT_DEPS"
 echo "[$(date)] Submitting report (dependency: $REPORT_DEPS)…"
 REPORT_JOB=$(sbatch --parsable \
     --dependency=afterok:$REPORT_DEPS \
@@ -190,4 +213,4 @@ echo "  Dataset: $DATASET ($CSV)"
 echo "  Results: $OUT"
 echo "  Logs:    logs/unlearn_*_*.out (match by job IDs below)"
 echo "  Monitor: squeue -u \$USER"
-echo "  Job IDs: train=$TRAIN_JOB single=$SINGLE_JOB single_best=$SINGLE_BEST_JOB hp=[$HP_METHODS] iter=$ITER_JOB stab=$STAB_JOB oracle=$ORACLE_JOB selc=$SELC_JOB sweep=$SWEEP_JOB canary=$CANARY_JOB report=$REPORT_JOB"
+echo "  Job IDs: train=$TRAIN_JOB single=$SINGLE_JOB single_best=$SINGLE_BEST_JOB hp=[$HP_METHODS] stab=[$STAB_DEPS] oracle=${ORACLE_JOB:-—} selc=${SELC_JOB:-—} sweep=${SWEEP_JOB:-—} canary=$CANARY_JOB report=$REPORT_JOB"
