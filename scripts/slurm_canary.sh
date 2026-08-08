@@ -10,13 +10,15 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
+set -euo pipefail   # any python failure → job FAILED (never phantom COMPLETED)
 # Usage: sbatch scripts/slurm_canary.sh <csv_path> <out_dir> [identity_ids...]
 #
 # One-off experiment: insert pixel canaries into 4 identities' images,
 # train on the canary-tagged dataset, unlearn those identities, then
 # verify the canary is gone from the unlearned model's features.
 #
-# Default identities: first 4 forget-step-0 identities (id 0-3 of step 0).
+# Default identities: first 4 forget identities, derived from the CSV at
+# submit time (forget_step=0 on balanced; first 4 forget ids on imbalanced).
 # The canary dataset is written to <out_dir>/dataset_canary.csv; the
 # canary model + unlearned models go under <out_dir>/canary/.
 
@@ -50,8 +52,22 @@ OUT="${2:-$OUT_BASE/canary}"
 shift 2
 IDENTITIES=("$@")
 if [ ${#IDENTITIES[@]} -eq 0 ]; then
-    IDENTITIES=(0 1 2 3)   # first 4 identities in forget_step_0
+    # Default: first 4 forget identities (forget_step=0 on balanced,
+    # first 4 forget identities on imbalanced — no schedule column).
+    # Derived from the CSV, never hardcoded (identity ids change with
+    # the dataset; the old '0 1 2 3' default were retain ids at 750-id).
+    IDENTITIES=($(python -c "
+import pandas as pd, sys
+df = pd.read_csv('$CSV')
+fg = df[df['split'] == 'forget']
+if 'forget_step' in fg.columns:
+    s0 = fg[fg['forget_step'] == fg['forget_step'].min()]['identity_id'].unique()
+else:
+    s0 = fg['identity_id'].unique()
+print(' '.join(map(str, sorted(s0)[:4])))
+"))
 fi
+echo "[$(date)] Canary identities: ${IDENTITIES[*]}"
 
 CANARY_CSV="$OUT/dataset_canary.csv"
 CKPT_DIR="$OUT/checkpoints"
@@ -61,7 +77,6 @@ mkdir -p "$OUT" "$CKPT_DIR" "$UNLEARN_DIR"
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Canary experiment on $CSV → $OUT"
-echo "[$(date)] Canary identities: ${IDENTITIES[*]}"
 
 # ── Stage 1: Insert canaries (tags has_canary; pixel insertion is
 #    documented as a placeholder — see canary.py CLI) ────────────────────
