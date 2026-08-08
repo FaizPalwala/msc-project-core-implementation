@@ -11,7 +11,7 @@ References:
 
 Protocol
 ────────
-  1. Select N forget identities (default: 4, one per variant in step 0).
+  1. Select N forget identities (default: first 4 of forget_step 0).
   2. Insert a unique 8×8 pixel canary in the top-left corner of each image
      belonging to those identities.  Pattern: identity-specific metameric
      colour grid, visually imperceptible (mean pixel shift < 2 LSB).
@@ -25,7 +25,9 @@ Protocol
      to a shadow model that never saw the canary.
 
 Usage:
-    # Phase 1: insert canaries
+    # Phase 1: insert canaries (pixel insertion — writes canary copies of
+    # the selected identities' images alongside the CSV, absolutizes all
+    # image_paths so the canary CSV is self-contained)
     python canary.py insert --csv data/dataset/dataset.csv \\
         --identities 300 301 302 303 --out data/dataset/dataset_canary.csv
 
@@ -225,19 +227,58 @@ if __name__ == "__main__":
         import pandas as pd
 
         df = pd.read_csv(args.csv)
+        # Resolve the data root: bench/ is the parent of the CSV's dir
+        # (bench/metadata/dataset.csv → bench/).  Relative image_paths in
+        # the source CSV are resolved against it.
+        data_root = Path(args.csv).resolve().parent.parent
+        canary_ids = set(args.identities)
+
         # Tag canaried identities
         df["has_canary"] = df["identity_id"].apply(
-            lambda c: int(c in set(args.identities)),
+            lambda c: int(c in canary_ids),
         )
-        # Insert canaries into image pixels (requires reading images)
-        # This is a placeholder — full implementation reads images,
-        # applies _make_canary + insert_canary, and writes back.
-        # For now, just tag and save.
+
+        # Rewrite image_path to ABSOLUTE paths (Bug fix): the canary CSV is
+        # written under results/<dataset>/canary/, so dataset.py's relative
+        # resolution (csv_dir → data_dir) would look in results/<dataset>/
+        # where images don't exist.  Absolutizing against the source data
+        # root makes the canary CSV self-contained wherever it lands.
+        out_path = Path(args.out)
+        out_dir = out_path.parent
+        canary_img_dir = out_dir / "canary_images"
+        new_paths: list[str] = []
+        inserted = 0
+        for _, row in df.iterrows():
+            img_rel = Path(row["image_path"])
+            if img_rel.is_absolute():
+                new_paths.append(str(img_rel))
+                continue
+            src_img = (data_root / img_rel).resolve()
+            if not src_img.exists():
+                raise FileNotFoundError(
+                    f"Source image missing: {src_img} (from {row['image_path']})"
+                )
+            if row["identity_id"] in canary_ids:
+                # Real pixel insertion: read the image, apply the
+                # identity-specific canary, save a copy alongside the
+                # canary CSV, and point the CSV at the copy.  Keep the
+                # full relative path (identity_XXX/crop_YYY.jpg) so
+                # same-named crops from different identities never collide.
+                dst = canary_img_dir / img_rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                img = np.array(Image.open(src_img).convert("RGB"))
+                img = insert_canary(img, int(row["identity_id"]))
+                Image.fromarray(img).save(dst, quality=95)
+                new_paths.append(str(dst))
+                inserted += 1
+            else:
+                new_paths.append(str(src_img))
+        df["image_path"] = new_paths
         df.to_csv(args.out, index=False)
         logger.info(f"[OK] Canary-tagged CSV → {args.out}")
         logger.info(f"     Identities: {args.identities}")
-        logger.info(f"     NOTE: pixel insertion requires image I/O — ")
-        logger.info(f"     modify images in data/processed/ before training.")
+        logger.info(f"     Pixel canaries inserted into {inserted} images "
+                    f"({len(df)} rows total, {len(df) - inserted} untouched)")
 
     elif args.command == "verify":
         device = resolve_device(args.device)
