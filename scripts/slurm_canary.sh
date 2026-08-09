@@ -107,9 +107,11 @@ python src/single_shot.py \
     --skip_retrain 2>&1
 
 # ── Stage 4: Verify canary removal on the unlearned models ──────────────
+# single_shot (multi-seed) writes seed_<seed>/<method>_unlearned.pt —
+# use the default seed_42 lane for verification.
 echo "[$(date)] Verifying canary unlearning…"
 for method in ga adaptiformet; do
-    MODEL="$UNLEARN_DIR/${method}_unlearned.pt"
+    MODEL="$UNLEARN_DIR/seed_42/${method}_unlearned.pt"
     if [ -f "$MODEL" ]; then
         echo "  [verify] $method"
         python src/canary.py verify \

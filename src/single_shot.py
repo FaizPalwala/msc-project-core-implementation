@@ -31,7 +31,7 @@ from mia import (
     print_per_identity_summary,
 )
 from probes import probe_all, measure_forgetting, print_probe_summary
-from model import load_model
+from model import load_model, NUM_IDENTITY_CLASSES
 from baselines import BASELINE_REGISTRY
 from sota_methods import SOTA_REGISTRY
 from novel_variant import NOVEL_REGISTRY
@@ -194,8 +194,17 @@ def run_single_shot(
             total_time = time.time() - t0
 
             # ── Save checkpoint ───────────────────────────────────────────
+            # Canonical dual-head dict (NOT bare state_dict): consumers load
+            # via load_model(), which misdetects a bare dict as legacy
+            # single-head and crashes (canary verify hit exactly this).
             ckpt = out_path / f"{method_name}_unlearned.pt"
-            torch.save(unlearned_model.state_dict(), ckpt)
+            torch.save({
+                "architecture": "dual_head",
+                "identity_classes": getattr(unlearned_model, "identity_classes",
+                                            NUM_IDENTITY_CLASSES),
+                "age_classes": getattr(unlearned_model, "age_classes", 4),
+                "model_state_dict": unlearned_model.state_dict(),
+            }, ckpt)
 
             all_results[method_name] = {
                 "method": display,

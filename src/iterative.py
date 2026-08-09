@@ -43,7 +43,7 @@ from mia import (
     run_mia_full, run_mia_per_identity,
     print_per_identity_summary,
 )
-from model import load_model, copy_model
+from model import load_model, copy_model, NUM_IDENTITY_CLASSES
 from baselines import BASELINE_REGISTRY
 from sota_methods import SOTA_REGISTRY
 from novel_variant import NOVEL_REGISTRY
@@ -299,7 +299,16 @@ def run_iterative(
 
             if checkpoint_every > 0 and (step + 1) % checkpoint_every == 0:
                 ckpt = out_path / f"{method_name}_step{step+1}.pt"
-                torch.save(current_model.state_dict(), ckpt)
+                # Canonical dual-head dict (NOT bare state_dict) — same
+                # rationale as single_shot: consumers must load via
+                # load_model(), which crashes on bare dicts.
+                torch.save({
+                    "architecture": "dual_head",
+                    "identity_classes": getattr(current_model, "identity_classes",
+                                                NUM_IDENTITY_CLASSES),
+                    "age_classes": getattr(current_model, "age_classes", 4),
+                    "model_state_dict": current_model.state_dict(),
+                }, ckpt)
 
             step_models[step] = copy_model(current_model, device)
 
