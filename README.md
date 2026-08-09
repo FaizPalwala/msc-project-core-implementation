@@ -141,6 +141,7 @@ python src/feasibility_study.py --src_csv ../bench/metadata/dataset.csv \
 | CT | `ct` | SOTA | Cadet et al. (2024) |
 | MSG-KD | `msg_kd` | Novel | — |
 | AdaptiForget | `adaptiforget` | Novel | — |
+| Budget-Scaled GA | `budget_scaled` | Novel | — |
 
 ## Evaluation Framework
 

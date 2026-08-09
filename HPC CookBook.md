@@ -65,7 +65,7 @@ the CSV** at runtime (600-id vs 750-id needs no code change).
 
 ```
                      ┌─ single_shot (default configs) ─────────┐
-train ───────────────┼─ hparam ×8 methods, ALL parallel ──────┤
+train ───────────────┼─ hparam ×9 methods, ALL parallel ──────┤
                      ├─ ablation (component study, afterok) ──┤
                      └─────────────────────────────────────────┘
                           │
@@ -83,7 +83,7 @@ imbalanced adds (after single_shot):
 |-------|--------|-----|-------------|
 | Train | `slurm_train.sh` | 1 L40S | Original model on retain+forget (train subset) |
 | Single-shot | `slurm_single_shot.sh` | 1 L40S | All methods, all forget IDs, default configs + per-identity/demographic CSVs |
-| HP search | `slurm_hparam.sh` | 1 L40S ×8 | **One job per method, all parallel**; each writes `{method}_best_config.json` |
+| HP search | `slurm_hparam.sh` | 1 L40S ×9 | **One job per method, all parallel**; each writes `{method}_best_config.json` |
 | Single-shot best | `slurm_single_shot.sh <out> <best_dir>` | 1 L40S | Same eval with tuned configs (compare-and-contrast vs default) |
 | Iterative | `slurm_iterative.sh` | 1 L40S | Schedule protocol (uniform 5×15 or Poisson), tuned configs, `--order_seed` |
 | Stability | `slurm_stability.sh` | CPU | 16 publication plots from the aggregated iterative CSV |
@@ -109,7 +109,7 @@ DATASET=balanced bash scripts/hpc_full_pipeline.sh
 # Poisson schedule instead of uniform (results → results/balanced/iterative_poisson)
 ITER_SCHEDULE=poisson DATASET=balanced bash scripts/hpc_full_pipeline.sh
 
-# HP method set override (default: ng_plus msg ct msg_kd adaptiforget ga srl ft)
+# HP method set override (default: ng_plus msg ct msg_kd adaptiforget ga srl ft budget_scaled)
 HP_METHODS="ng_plus ft" bash scripts/hpc_full_pipeline.sh
 
 # Monitor progress
@@ -129,7 +129,7 @@ sbatch scripts/slurm_train.sh "$CSV" results/balanced/checkpoints
 sbatch scripts/slurm_single_shot.sh "$CSV" "$MODEL" results/balanced/single_shot
 
 # 2b. HP search — ONE job per method, all parallel (8 jobs for the default set)
-for M in ng_plus msg ct msg_kd adaptiforget ga srl ft; do
+for M in ng_plus msg ct msg_kd adaptiforget ga srl ft budget_scaled; do
     sbatch scripts/slurm_hparam.sh "$CSV" "$MODEL" results/balanced/hparam "$M" grid
 done
 
@@ -246,14 +246,14 @@ partition, the HP stage's wall time is one method's search (~12 hr), not
 ```
                      ┌─ single_shot (default) ────────────────┐
 train ───────────────┤                                        ├─ single_shot_best
-                     └─ hparam ×8 methods (ALL parallel) ────┘      │
+                     └─ hparam ×9 methods (ALL parallel) ────┘      │
                                                               ├─ iterative ── stability
                                                               └─ canary (parallel)
 ```
 
 - **HP search: one Slurm job per method, all in parallel** — each writes its
   own `{method}_best_config.json`, so jobs never race on a shared file.
-  Default set: ng_plus msg ct msg_kd adaptiforget ga srl ft (methods with
+  Default set: ng_plus msg ct msg_kd adaptiforget ga srl ft budget_scaled (methods with
   grids in `hparam_search.GRIDS`; no_unlearning/retrain have no tunable
   params).  Override with `HP_METHODS`.
 - **Single-shot and HP run concurrently** after train (both depend only on
