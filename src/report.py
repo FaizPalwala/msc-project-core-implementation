@@ -173,6 +173,23 @@ def _load_canary(results_dir: Path) -> dict[str, Any] | None:
     return data
 
 
+def _load_ablation(results_dir: Path) -> dict[str, Any] | None:
+    """Load ablation results: ablation/ablation_results.json.
+
+    The ablation study (slurm_ablation.sh) runs AdaptiForget with each
+    component disabled in turn, on the main train checkpoint.  The JSON
+    is keyed by variant name → metrics.  Returns the dict or None.
+    """
+    path = results_dir / "ablation" / "ablation_results.json"
+    if not path.exists():
+        logger.warning(f"[Report] Ablation results not found: {path}")
+        return None
+    with open(path) as f:
+        data = json.load(f)
+    logger.info(f"[Report] Loaded ablation: {len(data)} variants")
+    return data
+
+
 # ── Renderers: LaTeX ─────────────────────────────────────────────────────────
 
 
@@ -430,6 +447,43 @@ def _render_canary_md(canary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _render_ablation_md(ablation: dict[str, Any]) -> str:
+    """Markdown table: AdaptiForget component ablation.
+
+    Each variant disables one component of AdaptiForget (adaptive λ,
+    mask refresh, early stop, KL distillation, masking).  Columns:
+    retain/forget identity accuracy, MIA AUC, signed forget advantage
+    (1 = fully erased, 0 = no erasure/leak), fraction leaked, steps used.
+    """
+    if not ablation:
+        return "_No ablation results available._\n"
+
+    lines = [
+        "",
+        "| Variant | Retain | Forget | MIA AUC | F-Adv (↑) | Leaked | Steps |",
+        "|---------|--------|--------|---------|-----------|--------|-------|",
+    ]
+    for name, r in ablation.items():
+        if not isinstance(r, dict):
+            lines.append(f"| {name} | — | — | — | — | — | — |")
+            continue
+        lines.append(
+            f"| {name} | {r.get('retain_id_acc', 0):.4f} | "
+            f"{r.get('forget_id_acc', 0):.4f} | "
+            f"{r.get('mia_mean_auc', 0.5):.4f} | "
+            f"{r.get('forget_advantage', 0):.4f} | "
+            f"{r.get('fraction_leaked', 0):.4f} | "
+            f"{r.get('steps_used', 0)} |"
+        )
+    lines.append("")
+    lines.append("_Forget advantage is the signed erasure signal "
+                 "`max(0, 1 − 2·MIA)` (C1 semantics): 1 = fully erased, "
+                 "0 = no erasure/leak.  Full AdaptiForget should show high "
+                 "advantage with retain ≥ 0.70; a variant's drop vs Full "
+                 "quantifies that component's contribution._")
+    return "\n".join(lines)
+
+
 # ── CSV export ───────────────────────────────────────────────────────────────
 
 
@@ -475,6 +529,7 @@ def generate_report(
 
     single_shot = _load_single_shot(results_path)
     canary = _load_canary(results_path)
+    ablation = _load_ablation(results_path)
 
     single_shot_data: dict[str, Any] = single_shot or {}
 
@@ -498,6 +553,10 @@ def generate_report(
     # Canary (markdown only — verification detail, not a headline table)
     md_parts.append("\n# Canary Verification (ground-truth deletion proof)")
     md_parts.append(_render_canary_md(canary or {}))
+
+    # Ablation (markdown only — novel-method component contribution)
+    md_parts.append("\n# AdaptiForget Ablation (component contribution)")
+    md_parts.append(_render_ablation_md(ablation or {}))
 
     # Write LaTeX
     tex = "\n\n".join(part for part in tex_parts if part)

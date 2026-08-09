@@ -81,6 +81,15 @@ SINGLE_JOB=$(sbatch --parsable \
     "$CSV" "$MODEL" "$OUT/single_shot")
 echo "  Single-shot job: $SINGLE_JOB"
 
+# ── Stage 2a: AdaptiForget ablation (parallel with the suite, like canary;
+#    reuses the train checkpoint, so it just needs afterok:TRAIN_JOB) ─────
+echo "[$(date)] Submitting ablation study (dependency: $TRAIN_JOB)…"
+ABLATION_JOB=$(sbatch --parsable \
+    --dependency=afterok:$TRAIN_JOB \
+    "$PROJECT_DIR/scripts/slurm_ablation.sh" \
+    "$CSV" "$OUT/ablation")
+echo "  Ablation job: $ABLATION_JOB"
+
 # ── Imbalanced equity plots (only when DATASET=imbalanced) ─────────────
 if [ "$DATASET" = "imbalanced" ]; then
     echo "[$(date)] Submitting imbalanced plots (dependency: $SINGLE_JOB)…"
@@ -194,8 +203,9 @@ CANARY_JOB=$(sbatch --parsable \
     "$CSV" "$OUT/canary")
 echo "  Canary job: $CANARY_JOB"
 
-# ── Stage 6: Report (after ALL lanes + single_shot_best + canary) ───────
+# ── Stage 6: Report (after ALL lanes + single_shot_best + canary + ablation)
 REPORT_DEPS="$CANARY_JOB:$SINGLE_BEST_JOB"
+[ -n "${ABLATION_JOB:-}" ] && REPORT_DEPS="$ABLATION_JOB:$REPORT_DEPS"
 [ -n "$STAB_DEPS" ] && REPORT_DEPS="$STAB_DEPS:$REPORT_DEPS"
 [ -n "${ORACLE_JOB:-}" ] && REPORT_DEPS="$ORACLE_JOB:$REPORT_DEPS"
 [ -n "${SELC_JOB:-}" ] && REPORT_DEPS="$SELC_JOB:$REPORT_DEPS"

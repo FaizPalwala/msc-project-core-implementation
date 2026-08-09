@@ -83,7 +83,11 @@ def run_ablation(
             "forget_id_acc": ev.get("forget", {}).get("identity", {}).get("accuracy", 0),
             "mia_mean_auc": per_id.get("mean_auc", 0.5),
             "mia_max_auc": per_id.get("max_auc", 0.5),
-            "forget_advantage": abs(per_id.get("mean_auc", 0.5) - 0.5),
+            # Signed forget advantage (C1 semantics): below-0.5 MIA is the
+            # erasure signal.  max(0, 1-2*MIA) ∈ [0,1]; 1 = fully erased,
+            # 0 = no erasure/leak.  abs(MIA-0.5) would reward the no-signal
+            # 0.5 baseline and conflate leak (0.9) with erasure (0.1).
+            "forget_advantage": max(0.0, 1.0 - 2.0 * per_id.get("mean_auc", 0.5)),
             "fraction_leaked": per_id.get("fraction_leaked", 0),
             "steps_used": res["metrics"].get("steps_used", 0),
             "time_s": res["metrics"].get("unlearning_time_s", 0),
@@ -110,12 +114,13 @@ def run_ablation(
     logger.info(f"\n{'='*80}")
     logger.info("  ADAPTIFORMET ABLATION STUDY")
     logger.info(f"{'='*80}")
-    logger.info(f"{'Variant':<26} {'IdAcc':>7} {'MIA-AUC':>9} {'F-Adv':>7} "
+    logger.info(f"{'Variant':<26} {'Retain':>7} {'Forget':>7} {'MIA-AUC':>9} {'F-Adv':>7} "
           f"{'Leaked':>7} {'Steps':>6}")
-    logger.info("─" * 65)
+    logger.info("─" * 72)
     for name, r in results.items():
         logger.info(
             f"{name:<26} {r['retain_id_acc']:>7.4f} "
+            f"{r['forget_id_acc']:>7.4f} "
             f"{r['mia_mean_auc']:>9.4f} {r['forget_advantage']:>7.4f} "
             f"{r['fraction_leaked']:>7.4f} {r['steps_used']:>6}"
         )
