@@ -10,6 +10,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
+set -euo pipefail
 # Usage: sbatch scripts/slurm_per_bin_oracle.sh <csv> <model> <out> [epochs]
 #
 # Retrains THREE per-bin oracles (high/medium/low), each excluding ONLY

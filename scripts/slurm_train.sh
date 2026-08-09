@@ -10,6 +10,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
+set -euo pipefail
 # Usage: sbatch scripts/slurm_train.sh <csv_path> <save_dir>
 
 # ── Repo root ────────────────────────────────────────────────────────────

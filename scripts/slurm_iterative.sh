@@ -10,6 +10,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
+set -euo pipefail
 # Usage: sbatch scripts/slurm_iterative.sh <csv> <model> <out> [schedule] [best_configs_dir]
 #   schedule: uniform (default) | poisson — schedule column to iterate
 #   (forget_step_N vs forget_step_poisson_N); poisson is balanced-only.

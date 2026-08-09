@@ -91,7 +91,17 @@ def run_per_bin_oracle(csv_path: str, model_path: str, out_dir: str,
         )
         m = res["model"]
         ckpt = out_path / f"oracle_{b}.pt"
-        torch.save(m.state_dict(), ckpt)
+        # Save in the canonical dual-head checkpoint format (not a bare
+        # state_dict): load_model() expects architecture/identity_classes/
+        # age_classes/model_state_dict — a bare state_dict is misdetected
+        # as legacy single-head and crashes with KeyError downstream
+        # (budget_sweep's load_oracle_reference hit exactly that).
+        torch.save({
+            "architecture": "dual_head",
+            "identity_classes": n_id,
+            "age_classes": getattr(m, "age_classes", 4),
+            "model_state_dict": m.state_dict(),
+        }, ckpt)
         oracles[b] = str(ckpt)
 
         ev = evaluate_full(m, csv_path, device, verbose=False, subset="holdout")

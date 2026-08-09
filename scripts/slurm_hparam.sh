@@ -10,6 +10,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
+set -euo pipefail
 # Usage: sbatch scripts/slurm_hparam.sh <csv> <model> <out> [method] [search]
 #   method: which method to search (default ng_plus).  Submit ONE job per
 #           method in parallel — each writes its own *_best_config.json so

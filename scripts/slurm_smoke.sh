@@ -8,6 +8,7 @@
 #SBATCH --time=00:30:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
+set -euo pipefail
 # Usage: sbatch scripts/slurm_smoke.sh
 #
 # Runs tests/smoke_test.py end-to-end: builds a 6-identity synthetic

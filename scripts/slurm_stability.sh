@@ -8,6 +8,7 @@
 #SBATCH --time=01:00:00
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=4G
+set -euo pipefail
 # Usage:
 #   sbatch scripts/slurm_stability.sh <combined_csv> <out_dir> [per_id_csv] [demog_csv]
 #   (per_id_csv/demog_csv optional — activate plots 10/11 when present)

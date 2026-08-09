@@ -8,6 +8,7 @@
 #SBATCH --time=00:15:00
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=4G
+set -euo pipefail
 # Usage: sbatch scripts/slurm_select_protocol_c.sh <aggregated_json> <out_dir>
 #
 # Picks ONE best method per category (baseline/SOTA/novel) by UF score

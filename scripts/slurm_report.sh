@@ -8,6 +8,7 @@
 #SBATCH --time=01:00:00
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=4G
+set -euo pipefail
 # Usage: sbatch scripts/slurm_report.sh <results_root>
 #
 # Consumes the pipeline artifacts under <results_root>/ and produces

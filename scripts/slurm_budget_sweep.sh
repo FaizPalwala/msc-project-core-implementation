@@ -10,6 +10,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
+set -euo pipefail
 # Usage: sbatch scripts/slurm_budget_sweep.sh \
 #            <csv> <model> <methods_json> <oracles_dir> <out> [best_configs_dir]
 #

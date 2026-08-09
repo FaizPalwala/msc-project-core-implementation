@@ -10,6 +10,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
+set -euo pipefail
 # Usage: sbatch scripts/slurm_single_shot.sh <csv> <model> <out> [best_configs_dir]
 #   best_configs_dir: optional dir of hparam *_best_config.json — tuned
 #   per-method values override YAML defaults (the "single-shot with best

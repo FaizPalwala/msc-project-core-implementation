@@ -8,6 +8,7 @@
 #SBATCH --time=00:15:00
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=4G
+set -euo pipefail
 # Usage: sbatch scripts/slurm_imbalanced_plots.sh <aggregated_json> <csv> <out_dir>
 
 # ── Repo root ────────────────────────────────────────────────────────────
