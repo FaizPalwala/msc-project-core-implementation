@@ -266,6 +266,16 @@ def adaptiformet(
     subset_ = kwargs.get("subset", "all")
     f_loader, n_f = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=True, subset=subset_, order_seed=kwargs.get("order_seed"))
     r_loader, n_r = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=True, subset=subset_)
+    # Early-stop / retain-drop PROXIES must evaluate GENERALISATION, i.e.
+    # holdout images — the same split the framework scores methods on.
+    # Evaluating on the train subset measures overfitting, not erasure:
+    # a few ascent steps inflate forget-TRAIN loss (proxy crashes < 0.05,
+    # early stop at step 25) while forget-HOLDOUT acc stays 1.0 — the
+    # AdaptiForget silent-no-op bug seen at both 12-id and 750-id.
+    # Proxies are evaluation-only (no_grad, no weight updates) so they do
+    # NOT violate the subset="train" pin for unlearning updates.
+    f_hold, _ = _loader(csv_path, f_split, get_val_transform(), batch_size, shuffle=False, subset="holdout", order_seed=kwargs.get("order_seed"))
+    r_hold, _ = _loader(csv_path, "retain", get_val_transform(), batch_size, shuffle=False, subset="holdout")
     criterion = nn.CrossEntropyLoss()
     kl_crit = nn.KLDivLoss(reduction="batchmean", log_target=True)
     opt_f = torch.optim.AdamW(unlearn_m.parameters(), lr=lr_ascent, weight_decay=0.0)
@@ -297,11 +307,11 @@ def adaptiformet(
     logger.info(f"  [AdaptiForget] Mask: {n_masked:,.0f}/{n_total:,.0f} params "
           f"({100*n_masked/n_total:.1f}%)")
 
-    def _quick_retain_acc(m, n_batches=10):
+    def _quick_retain_acc(m, loader=None, n_batches=10):
         m.eval()
         correct = total = 0
         with torch.no_grad():
-            for i, (imgs, id_lbls, age_lbls) in enumerate(r_loader):
+            for i, (imgs, id_lbls, age_lbls) in enumerate(loader or r_loader):
                 if i >= n_batches:
                     break
                 imgs = imgs.to(device)
@@ -312,7 +322,7 @@ def adaptiformet(
                 total += len(id_lbls)
         return correct / max(total, 1)
 
-    retain_acc_ref = _quick_retain_acc(unlearn_m)
+    retain_acc_ref = _quick_retain_acc(unlearn_m, r_hold)
     retain_drop_threshold = retain_acc_ref - retain_drop_tol
 
     history: dict[str, list] = {
@@ -390,10 +400,12 @@ def adaptiformet(
         history["kl_weight"].append(kl_w)
 
         if (step + 1) % 25 == 0:
-            proxy = _quick_forget_advantage(unlearn_m, f_loader, r_loader, device, n_batches=5)
+            # Holdout proxy: measures generalised erasure, not train-set
+            # overfitting (see loader construction above).
+            proxy = _quick_forget_advantage(unlearn_m, f_hold, r_hold, device, n_batches=5)
             history["proxy_adv"].append(proxy)
             history["step"].append(step + 1)
-            r_acc = _quick_retain_acc(unlearn_m)
+            r_acc = _quick_retain_acc(unlearn_m, r_hold)
 
             if proxy < early_stop_adv:
                 logger.info(f"  [AdaptiForget] Early stop at step {step+1}: proxy_adv={proxy:.3f}")
