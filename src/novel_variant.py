@@ -322,6 +322,33 @@ def adaptiformet(
                 total += len(id_lbls)
         return correct / max(total, 1)
 
+    def _quick_forget_acc(m, loader=None, n_batches=10):
+        """Forget-HOLDOUT accuracy — the framework's own forgetting metric.
+
+        Early-stopping on THIS (rather than the old loss-ratio proxy)
+        measures generalised erasure: the old proxy compared forget loss
+        against the retain-loss median, which is ~an order of magnitude
+        smaller (model far more confident on retain) — so the 'fraction
+        below retain median' was structurally low (0.20 at step 0) and
+        crashed < 0.05 after a few ascent steps, stopping before any
+        holdout erasure (forget acc still 1.0).  Accuracy is scale-free
+        and directly matches the METRICS_GUIDE spec (forget-holdout
+        acc ≤ 0.15 = forgotten).
+        """
+        m.eval()
+        correct = total = 0
+        with torch.no_grad():
+            for i, (imgs, id_lbls, age_lbls) in enumerate(loader or f_hold):
+                if i >= n_batches:
+                    break
+                imgs = imgs.to(device)
+                id_lbls = id_lbls.to(device)
+                id_logits, _ = m(imgs)
+                preds = id_logits.argmax(1)
+                correct += (preds == id_lbls).sum().item()
+                total += len(id_lbls)
+        return correct / max(total, 1)
+
     retain_acc_ref = _quick_retain_acc(unlearn_m, r_hold)
     retain_drop_threshold = retain_acc_ref - retain_drop_tol
 
@@ -400,15 +427,18 @@ def adaptiformet(
         history["kl_weight"].append(kl_w)
 
         if (step + 1) % 25 == 0:
-            # Holdout proxy: measures generalised erasure, not train-set
-            # overfitting (see loader construction above).
-            proxy = _quick_forget_advantage(unlearn_m, f_hold, r_hold, device, n_batches=5)
+            # Holdout proxies: forget-holdout ACC (the framework's own
+            # forgetting metric) + retain-holdout acc.  Evaluation-only
+            # (no_grad) — does NOT violate the subset='train' pin.
+            forget_acc = _quick_forget_acc(unlearn_m, f_hold, n_batches=5)
+            r_acc = _quick_retain_acc(unlearn_m, r_hold, n_batches=5)
+            proxy = forget_acc   # early-stop signal = remaining forget acc
             history["proxy_adv"].append(proxy)
             history["step"].append(step + 1)
-            r_acc = _quick_retain_acc(unlearn_m, r_hold)
 
             if proxy < early_stop_adv:
-                logger.info(f"  [AdaptiForget] Early stop at step {step+1}: proxy_adv={proxy:.3f}")
+                logger.info(f"  [AdaptiForget] Early stop at step {step+1}: "
+                      f"forget_holdout_acc={proxy:.3f} < {early_stop_adv}")
                 stopped_at = step + 1
                 break
 

@@ -10,6 +10,6 @@ kl_weight_max: 0.8
 kl_anneal_steps: 200
 mask_refresh_every: 100
 mask_grad_batches: 20
-early_stop_adv: 0.05
-early_stop_patience: 50
+early_stop_adv: 0.05     # stop when forget-HOLDOUT acc < this (target erasure; was a loss-ratio proxy)
+early_stop_patience: 50  # retain-drop patience (checks every 25 steps)
 retain_drop_tol: 0.03
