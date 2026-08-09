@@ -11,7 +11,7 @@ forget (H1, FaLW-grounded).
 Budget semantics (imbalanced has no schedule axis — "budget" = method
 internal unlearning iterations):
     ga→ga_steps  srl→srl_epochs  ft→ft_epochs  ng_plus→ng_steps
-    msg→msg_steps  ct→ct_steps  msg_kd→msg_steps  adaptiformet→max_steps
+    msg→msg_steps  ct→ct_steps  msg_kd→msg_steps  adaptiforget→max_steps
 
 Distance-to-oracle (behavioral, per bin):
     |forget_holdout_acc(method@budget, bin) − forget_holdout_acc(oracle_bin, bin)|
@@ -65,7 +65,7 @@ BINS = ["high", "medium", "low"]
 BUDGET_KEY = {
     "ga": "ga_steps", "srl": "srl_epochs", "ft": "ft_epochs",
     "ng_plus": "ng_steps", "msg": "msg_steps", "ct": "ct_steps",
-    "msg_kd": "msg_steps", "adaptiformet": "max_steps",
+    "msg_kd": "msg_steps", "adaptiforget": "max_steps",
 }
 
 # Budget grid as multiples of the tuned best-config value.

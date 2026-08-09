@@ -35,7 +35,7 @@ Usage:
 
     # Phase 3: verify after unlearning
     python canary.py verify --csv data/dataset/dataset_canary.csv \\
-        --model results/single_shot/adaptiformet_unlearned.pt \\
+        --model results/single_shot/adaptiforget_unlearned.pt \\
         --identities 300 301 302 303
 """
 

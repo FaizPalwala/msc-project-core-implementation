@@ -229,7 +229,7 @@ def msg_kd(
 # ── AdaptiForget ──────────────────────────────────────────────────────────────
 
 
-def adaptiformet(
+def adaptiforget(
     model: nn.Module,
     csv_path: str,
     device: torch.device,
@@ -475,5 +475,5 @@ def adaptiformet(
 
 NOVEL_REGISTRY = {
     "msg_kd": msg_kd,
-    "adaptiformet": adaptiformet,
+    "adaptiforget": adaptiforget,
 }

@@ -14,7 +14,7 @@ set -euo pipefail
 # Usage: sbatch scripts/slurm_feasibility.sh [dataset] [methods...]
 #   dataset : balanced (default) | imbalanced — which CSV to subsample
 #   methods : space-separated subset of
-#             ga ng_plus adaptiformet msg msg_kd ct ft srl
+#             ga ng_plus adaptiforget msg msg_kd ct ft srl
 #             (default: all 8)
 #
 # Cheap pre-flight before the expensive full re-run: trains a small model
@@ -55,7 +55,7 @@ fi
 OUT="$PROJECT_DIR/results/feasibility_${DATASET}"
 shift 2>/dev/null || true
 METHODS=("$@")
-[ ${#METHODS[@]} -eq 0 ] && METHODS=(ga ng_plus adaptiformet msg msg_kd ct ft srl)
+[ ${#METHODS[@]} -eq 0 ] && METHODS=(ga ng_plus adaptiforget msg msg_kd ct ft srl)
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Feasibility gate (${DATASET}) → $OUT"

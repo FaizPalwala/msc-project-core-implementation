@@ -109,7 +109,7 @@ DATASET=balanced bash scripts/hpc_full_pipeline.sh
 # Poisson schedule instead of uniform (results → results/balanced/iterative_poisson)
 ITER_SCHEDULE=poisson DATASET=balanced bash scripts/hpc_full_pipeline.sh
 
-# HP method set override (default: ng_plus msg ct msg_kd adaptiformet ga srl ft)
+# HP method set override (default: ng_plus msg ct msg_kd adaptiforget ga srl ft)
 HP_METHODS="ng_plus ft" bash scripts/hpc_full_pipeline.sh
 
 # Monitor progress
@@ -129,7 +129,7 @@ sbatch scripts/slurm_train.sh "$CSV" results/balanced/checkpoints
 sbatch scripts/slurm_single_shot.sh "$CSV" "$MODEL" results/balanced/single_shot
 
 # 2b. HP search — ONE job per method, all parallel (8 jobs for the default set)
-for M in ng_plus msg ct msg_kd adaptiformet ga srl ft; do
+for M in ng_plus msg ct msg_kd adaptiforget ga srl ft; do
     sbatch scripts/slurm_hparam.sh "$CSV" "$MODEL" results/balanced/hparam "$M" grid
 done
 
@@ -253,7 +253,7 @@ train ───────────────┤                          
 
 - **HP search: one Slurm job per method, all in parallel** — each writes its
   own `{method}_best_config.json`, so jobs never race on a shared file.
-  Default set: ng_plus msg ct msg_kd adaptiformet ga srl ft (methods with
+  Default set: ng_plus msg ct msg_kd adaptiforget ga srl ft (methods with
   grids in `hparam_search.GRIDS`; no_unlearning/retrain have no tunable
   params).  Override with `HP_METHODS`.
 - **Single-shot and HP run concurrently** after train (both depend only on

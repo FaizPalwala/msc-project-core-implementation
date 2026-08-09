@@ -113,7 +113,7 @@ python src/single_shot.py --csv ../bench/metadata/dataset.csv \
 # Iterative protocol (15 steps)
 python src/iterative.py --csv ../bench/metadata/dataset.csv \
     --model results/checkpoints/original_model_best.pt \
-    --methods ng_plus msg_kd adaptiformet
+    --methods ng_plus msg_kd adaptiforget
 
 # Stability plots
 python src/stability.py --combined results/iterative/iterative_combined_aggregated.csv
@@ -140,7 +140,7 @@ python src/feasibility_study.py --src_csv ../bench/metadata/dataset.csv \
 | MSG | `msg` | SOTA | Cadet et al. (2024) |
 | CT | `ct` | SOTA | Cadet et al. (2024) |
 | MSG-KD | `msg_kd` | Novel | — |
-| AdaptiForget | `adaptiformet` | Novel | — |
+| AdaptiForget | `adaptiforget` | Novel | — |
 
 ## Evaluation Framework
 

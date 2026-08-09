@@ -17,7 +17,7 @@ Protocol
 Usage:
     python iterative.py --csv data/dataset/dataset.csv \\
                         --model results/checkpoints/original_model_best.pt \\
-                        --out results/iterative --methods ga ng_plus adaptiformet
+                        --out results/iterative --methods ga ng_plus adaptiforget
 """
 
 from __future__ import annotations

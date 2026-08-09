@@ -105,7 +105,7 @@ fi
 # Each job writes its own {method}_best_config.json (no shared-file races).
 # HP_METHODS overrides the default set (methods with grids defined in
 # hparam_search.GRIDS; no_unlearning/retrain have no tunable params).
-HP_METHODS="${HP_METHODS:-ng_plus msg ct msg_kd adaptiformet ga srl ft}"
+HP_METHODS="${HP_METHODS:-ng_plus msg ct msg_kd adaptiforget ga srl ft}"
 HP_DEPS=""
 echo "[$(date)] Submitting HP search — one job per method, in parallel…"
 for M in $HP_METHODS; do

@@ -10,7 +10,7 @@ each bin reaches its per-bin oracle).
 Categories (fixed by method family, not by results):
     baseline : ga, srl, ft
     sota     : ng_plus, msg, ct
-    novel    : msg_kd, adaptiformet
+    novel    : msg_kd, adaptiforget
 
 Ranking metric: hparam_search.uf_score(retain_acc, forget_advantage,
 time_s) — the same composite used by the HP search, so selection is
@@ -22,7 +22,7 @@ Usage:
         --out results/imbalanced
 
 Writes protocol_c_methods.json:
-    {"baseline": "ft", "sota": "ng_plus", "novel": "adaptiformet", "scores": {...}}
+    {"baseline": "ft", "sota": "ng_plus", "novel": "adaptiforget", "scores": {...}}
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 CATEGORIES = {
     "baseline": ["ga", "srl", "ft"],
     "sota":     ["ng_plus", "msg", "ct"],
-    "novel":    ["msg_kd", "adaptiformet"],
+    "novel":    ["msg_kd", "adaptiforget"],
 }
 
 

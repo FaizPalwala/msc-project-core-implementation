@@ -27,7 +27,7 @@ from device_utils import resolve_device
 from evaluate import evaluate_full
 from mia import run_mia_full, run_mia_per_identity
 from model import load_model
-from novel_variant import adaptiformet
+from novel_variant import adaptiforget
 from interfaces import validate_unlearning_result, prepare_method_call
 
 
@@ -60,8 +60,8 @@ def run_ablation(
 
     original = load_model(model_path, device=str(device))
 
-    # Load base config from methods/adaptiformet.yaml
-    base_cfg = get_method_config("adaptiformet", scale=scale)
+    # Load base config from methods/adaptiforget.yaml
+    base_cfg = get_method_config("adaptiforget", scale=scale)
 
     results: dict[str, dict] = {}
 
@@ -69,8 +69,8 @@ def run_ablation(
     for name, overrides in ABLATIONS.items():
         cfg = prepare_method_call({**base_cfg, **overrides})  # pins subset="train"
         logger.info(f"\n  ── {name}")
-        res = adaptiformet(original, csv_path, device, seed=seed, **cfg)
-        validate_unlearning_result(res, "adaptiformet")
+        res = adaptiforget(original, csv_path, device, seed=seed, **cfg)
+        validate_unlearning_result(res, "adaptiforget")
         m = res["model"]
 
         ev = evaluate_full(m, csv_path, device, verbose=False, subset="holdout")

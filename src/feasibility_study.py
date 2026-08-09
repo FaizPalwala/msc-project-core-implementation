@@ -21,7 +21,7 @@ Usage:
     python src/feasibility_study.py \
         --src_csv metadata/dataset.csv \
         --out results/feasibility \
-        [--methods ga ng_plus adaptiformet msg msg_kd ct ft srl] \
+        [--methods ga ng_plus adaptiforget msg msg_kd ct ft srl] \
         [--multipliers 1 3 10] \
         [--epochs 3] [--n_retain 8] [--n_forget 4] [--device cpu]
 """
@@ -47,7 +47,7 @@ BUDGET_KEYS: dict[str, str | None] = {
     "ng_plus": "ng_steps",
     "msg": "msg_steps",
     "msg_kd": "msg_steps",
-    "adaptiformet": "max_steps",
+    "adaptiforget": "max_steps",
     "ct": "ct_steps",
     "ft": "ft_epochs",
     "srl": "srl_epochs",      # falls back to 3 if key absent
@@ -56,7 +56,7 @@ BUDGET_KEYS: dict[str, str | None] = {
 }
 
 # Methods the feasibility gate is designed to triage (all registries).
-DEFAULT_METHODS = ["ga", "ng_plus", "adaptiformet", "msg", "msg_kd",
+DEFAULT_METHODS = ["ga", "ng_plus", "adaptiforget", "msg", "msg_kd",
                    "ct", "ft", "srl"]
 
 

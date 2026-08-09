@@ -86,7 +86,7 @@ GRIDS = {
         "topk_fraction":          [0.1, 0.2, 0.3],
         "kl_weight":              [0.3, 0.5, 0.8],
     },
-    "adaptiformet": {
+    "adaptiforget": {
         "max_steps":              [400, 600],
         "lr_ascent":              [1e-5, 5e-5],
         "lr_retain":              [5e-5, 1e-4],
@@ -129,7 +129,7 @@ RANDOM_RANGES = {
         "topk_fraction":          ("float", 0.05, 0.5),
         "kl_weight":              ("float", 0.0, 1.0),
     },
-    "adaptiformet": {
+    "adaptiforget": {
         "max_steps":              ("int",   200, 800),
         "lr_ascent":              ("log",   1e-6, 1e-4),
         "lr_retain":              ("log",   1e-6, 1e-3),

@@ -67,7 +67,7 @@ METHOD_STYLES = {
     "msg":           {"color": "#4db6ac", "ls": "-",  "marker": "v", "label": "MSG"},
     "msg_kd":        {"color": "#81c784", "ls": "-",  "marker": "P", "label": "MSG-KD"},
     "ct":            {"color": "#ba68c8", "ls": "-",  "marker": "h", "label": "CT"},
-    "adaptiformet":  {"color": "#ff7043", "ls": "-",  "marker": "*", "label": "AdaptiForget"},
+    "adaptiforget":  {"color": "#ff7043", "ls": "-",  "marker": "*", "label": "AdaptiForget"},
 }
 ORACLE_COLOR = "#1565c0"
 
@@ -705,7 +705,7 @@ if __name__ == "__main__":
     parser.add_argument("--per_id_csv", type=str, default=None)
     parser.add_argument("--demog_csv",  type=str, default=None)
     parser.add_argument("--methods",    type=str, nargs="*", default=None,
-                        help="Plot only these methods (e.g. ga adaptiformet)")
+                        help="Plot only these methods (e.g. ga adaptiforget)")
     parser.add_argument("--steps",      type=int, nargs="*", default=None,
                         help="Plot only these steps (e.g. 1 5 10 15)")
     args = parser.parse_args()

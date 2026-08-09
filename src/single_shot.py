@@ -7,7 +7,7 @@ evaluates with the five-tier framework, and saves per-method results.
 Usage:
     python single_shot.py --csv data/dataset/dataset.csv \\
                           --model results/checkpoints/original_model_best.pt \\
-                          --out results/single_shot --methods ga ng_plus adaptiformet
+                          --out results/single_shot --methods ga ng_plus adaptiforget
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ METHOD_DISPLAY = {
     "msg":           "MSG",
     "ct":            "CT",
     "msg_kd":        "MSG-KD †",
-    "adaptiformet":  "AdaptiForget ‡",
+    "adaptiforget":  "AdaptiForget ‡",
 }
 
 
