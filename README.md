@@ -73,6 +73,7 @@ File format (CSV or Parquet) is auto-detected from the extension.
 ```
 train → single_shot → (imbalanced: equity plots) → hparam → iterative → stability ──┐
   │          │                                                                    │
+  ├──→ ablation (parallel, after train) ─────────────────────────────────────────┤
   └──→ canary (independent) ────────────────────────────────────────────────────┴──→ report
 ```
 
@@ -84,8 +85,9 @@ train → single_shot → (imbalanced: equity plots) → hparam → iterative �
 | HP search | `hparam_search.py` | Grid/random search, UF-score ranking | Parallel with single-shot |
 | Iterative | `iterative.py` | Schedule protocol (uniform 5×15, or Poisson), cumulative + fresh, re-emergence, `--order_seed` for order-stability | After best configs |
 | Stability | `stability.py` | 16 publication-quality plots | After iterative |
+| Ablation | `ablation_study.py` | AdaptiForget component ablation (6 variants, one component disabled each) | Parallel, after train |
 | Canary | `canary.py` | Pixel-level ground-truth deletion proof | Independent |
-| Report | `report.py` | LaTeX/Markdown synthesis of all results | After stability + canary |
+| Report | `report.py` | LaTeX/Markdown synthesis of all results | After stability + canary + ablation |
 
 The imbalanced chain skips iterative + stability (no `forget_step` to
 iterate over — its axis is the popularity gradient, not time).
@@ -115,6 +117,14 @@ python src/iterative.py --csv ../bench/metadata/dataset.csv \
 
 # Stability plots
 python src/stability.py --combined results/iterative/iterative_combined_aggregated.csv
+
+# AdaptiForget component ablation (6 variants, reuses the trained model)
+python src/ablation_study.py --csv ../bench/metadata/dataset.csv \
+    --model results/checkpoints/original_model_best.pt --out results/ablation
+
+# Method feasibility gate (cheap C2/C3 triage before a full run — GO/TUNE/BROKEN)
+python src/feasibility_study.py --src_csv ../bench/metadata/dataset.csv \
+    --out results/feasibility --device auto
 ```
 
 ## Methods

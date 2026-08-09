@@ -66,14 +66,16 @@ the CSV** at runtime (600-id vs 750-id needs no code change).
 ```
                      ┌─ single_shot (default configs) ─────────┐
 train ───────────────┼─ hparam ×8 methods, ALL parallel ──────┤
+                     ├─ ablation (component study, afterok) ──┤
                      └─────────────────────────────────────────┘
                           │
                           ├─→ single_shot_best (tuned configs) ──→ report
                           ├─→ iterative (tuned) → stability ──────┘
                           └─→ canary (independent) ────────────────┘
 
-imbalanced adds (after single_shot_best):
-  per-bin oracles (Protocol B) ─┐
+imbalanced adds (after single_shot):
+  equity plots (per-bin fairness) ─────────────────────────────┐
+  per-bin oracles (Protocol B) ─┐                              │
   Protocol C selection ─────────┼─→ budget sweep (Protocol C) → report
 ```
 
@@ -85,6 +87,8 @@ imbalanced adds (after single_shot_best):
 | Single-shot best | `slurm_single_shot.sh <out> <best_dir>` | 1 L40S | Same eval with tuned configs (compare-and-contrast vs default) |
 | Iterative | `slurm_iterative.sh` | 1 L40S | Schedule protocol (uniform 5×15 or Poisson), tuned configs, `--order_seed` |
 | Stability | `slurm_stability.sh` | CPU | 16 publication plots from the aggregated iterative CSV |
+| Equity plots (imbalanced) | `slurm_imbalanced_plots.sh` | CPU | 6 per-bin equity plots + Kruskal-Wallis (after single-shot) |
+| Ablation | `slurm_ablation.sh` | 1 L40S | AdaptiForget component ablation (6 variants); reuses train checkpoint, parallel with the suite |
 | Canary | `slurm_canary.sh` | 1 L40S | Pixel-level ground-truth deletion proof (independent) |
 | Report | `slurm_report.sh` | CPU | LaTeX/Markdown synthesis of all results |
 | Per-bin oracles (imbalanced) | `slurm_per_bin_oracle.sh` | 1 L40S | Protocol B: 3 retrains, each excluding only one bin's forgets |
@@ -148,10 +152,13 @@ sbatch scripts/slurm_stability.sh \
     results/balanced/single_shot/single_shot_per_identity.csv \
     results/balanced/single_shot/single_shot_demographic.csv
 
-# 5. Canary verification (independent; runs anytime after model exists)
+# 5. Ablation study (parallel — reuses the train checkpoint; runs anytime after train)
+sbatch scripts/slurm_ablation.sh "$CSV" results/balanced/ablation
+
+# 6. Canary verification (independent; runs anytime after model exists)
 sbatch scripts/slurm_canary.sh "$CSV" results/balanced/canary
 
-# 6. Report (after stability + single_shot_best + canary)
+# 7. Report (after stability + single_shot_best + canary + ablation)
 sbatch scripts/slurm_report.sh results/balanced
 ```
 
@@ -185,6 +192,35 @@ sbatch scripts/slurm_smoke.sh
 python tests/smoke_test.py
 ```
 
+### Method Feasibility Gate (C2/C3 triage — before the expensive full run)
+
+Cheap gate that subsamples ~12 real identities, trains a tiny model, and
+sweeps each method's budget at 1×/3×/10× through the real method
+registries, returning GO / TUNE / BROKEN verdicts per method.  Use it to
+decide whether a method is healthy at scale (GO), needs config work
+(TUNE), or is structurally broken (BROKEN — remove/redesign) *before*
+spending the full-run GPU budget.  Locally on Apple Silicon:
+
+```bash
+UNLEARN_NUM_WORKERS=0 PYTHONPATH="" python3 -u src/feasibility_study.py \
+    --src_csv /path/to/metadata/dataset.csv \
+    --out results/feasibility_balanced \
+    --epochs 3 --step_scale 1.0 --device mps
+```
+
+On Aire (GPU, full budgets, ~4 h):
+
+```bash
+sbatch scripts/slurm_feasibility.sh balanced
+# → results/feasibility_balanced/feasibility_results.json (rows + verdicts)
+```
+
+Verdicts: GO = forgets+retains at some budget; TUNE = responds to budget,
+needs config work; TUNE(retain-collapse) = forgets but kills retain;
+BROKEN = no response even at 10× (remove/redesign).  `--step_scale`
+shrinks base budgets for CPU checks; `--methods` restricts the sweep.
+
+
 ## Resource Estimates
 
 | Stage | GPU | CPUs | Memory | Wall time (full) | Wall time (smoke) |
@@ -195,6 +231,8 @@ python tests/smoke_test.py
 | Single-shot best | 1 L40S | 8 | 32 GB | 12-24 hr | 1 hr |
 | Iterative | 1 L40S | 8 | 32 GB | 24-48 hr | 2 hr |
 | Stability plots | CPU | 4 | 16 GB | 30 min | 5 min |
+| Ablation | 1 L40S | 8 | 32 GB | 2-4 hr | 15 min |
+| Canary | 1 L40S | 8 | 32 GB | 4-6 hr | 20 min |
 | Per-bin oracles (×3) | 1 L40S | 8 | 32 GB | 12-18 hr | — |
 | Budget sweep | 1 L40S | 8 | 32 GB | 8-12 hr | — |
 | **Total pipeline (balanced)** | — | — | — | **~48-72 hr** | **~4 hr** |
@@ -220,6 +258,9 @@ train ───────────────┤                          
   params).  Override with `HP_METHODS`.
 - **Single-shot and HP run concurrently** after train (both depend only on
   the trained model).
+- **Ablation runs concurrently too** — it reuses the train checkpoint
+  (`afterok` on train, no retrain), so it costs only 1 extra GPU slot and
+  ~2-4 hr, parallel with single-shot/HP; the report waits on it.
 - **`single_shot_best` runs after all HP jobs** — tuned configs override
   YAML defaults (`config_loader` merges; the log states
   `[config] DEFAULT` vs `[config] OPTIMIZED` per run).
