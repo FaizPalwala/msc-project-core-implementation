@@ -29,6 +29,7 @@ from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
 
 from dataset import VirtualIdentityDataset, get_val_transform
+from device_utils import resolve_num_workers
 
 
 import logging
@@ -95,7 +96,7 @@ def probe_identity(
     ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform(),
                                 subset=subset)
     loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
-                        num_workers=2, pin_memory=True)
+                        num_workers=resolve_num_workers(), pin_memory=True)
 
     features, id_labels, _ = extract_features(model, loader, device)
 
@@ -148,7 +149,7 @@ def probe_age(
     ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform(),
                                 subset=subset)
     loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
-                        num_workers=2, pin_memory=True)
+                        num_workers=resolve_num_workers(), pin_memory=True)
 
     features, _, age_labels = extract_features(model, loader, device)
 
@@ -198,7 +199,7 @@ def probe_gender(
         return None
 
     loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
-                        num_workers=2, pin_memory=True)
+                        num_workers=resolve_num_workers(), pin_memory=True)
     features, _, _ = extract_features(model, loader, device)
 
     n_train = int(0.8 * len(features))
@@ -292,7 +293,7 @@ def measure_forgetting(
             subset=_subset or subset,
         )
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
-                            num_workers=2, pin_memory=True)
+                            num_workers=resolve_num_workers(), pin_memory=True)
         feats, _, _ = extract_features(_model, loader, device)
         return feats.mean(axis=0, keepdims=True)
 

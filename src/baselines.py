@@ -76,7 +76,7 @@ def _make_loader(
     batch_size: int,
     shuffle: bool = False,
     forget_step: int | None = None,
-    num_workers: int = 2,
+    num_workers: int | None = None,   # None → resolve_num_workers() (env/Slurm-aware)
     subset: str = "all",
     schedule: str = "uniform",
     order_seed: int | None = None,
@@ -88,7 +88,7 @@ def _make_loader(
                                 subset=subset, order_seed=order_seed)
     return (
         DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
-                   num_workers=num_workers, pin_memory=True),
+                   num_workers=resolve_num_workers(num_workers), pin_memory=True),
         len(ds),
     )
 
