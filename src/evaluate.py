@@ -18,6 +18,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from dataset import VirtualIdentityDataset, get_val_transform
+from device_utils import resolve_num_workers
 
 
 
@@ -152,7 +153,7 @@ def evaluate_full(
         if len(ds) == 0:
             continue
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
-                            num_workers=2, pin_memory=True)
+                            num_workers=resolve_num_workers(), pin_memory=True)
         results[split] = evaluate_model(model, loader, device)
 
     if verbose:

@@ -24,6 +24,7 @@ from sklearn.metrics import roc_auc_score, accuracy_score
 from torch.utils.data import DataLoader
 
 from dataset import VirtualIdentityDataset, get_val_transform
+from device_utils import resolve_num_workers
 
 
 
@@ -172,7 +173,8 @@ def _build_loaders(
     This is cleaner than the old unseen-identity split, which carried a
     systematic low-confidence confound.
     """
-    kw = dict(batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
+    kw = dict(batch_size=batch_size, shuffle=False,
+              num_workers=resolve_num_workers(), pin_memory=True)
     retain_loader = DataLoader(
         VirtualIdentityDataset(csv_path, "retain", transform=get_val_transform(),
                                subset=subset), **kw,

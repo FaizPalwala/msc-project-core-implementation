@@ -24,11 +24,21 @@ def resolve_device(device_str: str = "auto") -> torch.device:
 def resolve_num_workers(requested: int | None = None) -> int:
     """Return the number of DataLoader workers.
 
-    Priority: explicit override > Slurm CPUs > os.cpu_count() > 4.
-    Capped at 8 to avoid I/O contention on shared HPC nodes.
+    Priority: explicit override > UNLEARN_NUM_WORKERS env > Slurm CPUs >
+    os.cpu_count() > 4.  Capped at 8 to avoid I/O contention on shared HPC
+    nodes.  Set UNLEARN_NUM_WORKERS=0 for CPU-only runs: per-step loader
+    recreation with many workers deadlocks on macOS (main thread blocks in
+    poll waiting on worker pipes).
     """
     if requested is not None and requested > 0:
         return min(requested, 16)
+
+    env_workers = os.environ.get("UNLEARN_NUM_WORKERS")
+    if env_workers is not None:
+        try:
+            return max(0, min(int(env_workers), 16))
+        except ValueError:
+            pass
 
     slurm_cpus = os.environ.get("SLURM_CPUS_PER_TASK")
     if slurm_cpus is not None:
