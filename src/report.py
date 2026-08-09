@@ -87,9 +87,12 @@ def _fmt_musigma(mu: Any, sigma: Any, fmt: str = ".4f") -> str:
 
 
 def _uf_score(retain_acc: float, mia_mean_auc: float, time_s: float) -> float:
-    """Composite Utility-Forgetting score ∈ [0, 1] (see hparam_search.uf_score)."""
-    forget_advantage = abs(mia_mean_auc - 0.5)
-    forget_score = max(0.0, 1.0 - forget_advantage / 0.5)
+    """Composite Utility-Forgetting score ∈ [0, 1] (see hparam_search.uf_score).
+
+    forget term rewards AUC below 0.5 (erasure signal; oracle ≈ 0.0) and
+    zeroes at/above 0.5 (no-signal control / leak).
+    """
+    forget_score = max(0.0, 1.0 - 2.0 * mia_mean_auc)
     time_score = min(1.0, time_s / TIME_BUDGET_S)
     return (
         UF_WEIGHTS["w_retain"] * retain_acc

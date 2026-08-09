@@ -52,9 +52,9 @@ def _method_uf(data: dict) -> float:
     from hparam_search import uf_score
     retain = data.get("retain_id_acc") or 0.0
     mia = data.get("mia_mean_auc")
-    adv = abs(float(mia) - 0.5) if mia is not None else 0.5
+    mia = float(mia) if mia is not None else 0.5
     t = data.get("total_time_s") or data.get("unlearning_time_s") or 0.0
-    return uf_score(retain_acc=retain, forget_advantage=adv, time_s=t)
+    return uf_score(retain_acc=retain, mia_auc=mia, time_s=t)
 
 
 def select(aggregated_path: str, out_dir: str) -> dict:

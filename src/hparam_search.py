@@ -8,10 +8,12 @@ Implements two search strategies:
 After each trial the model is evaluated on retain and forget splits
 and a scalar utility-forgetting score (UF-score) is computed:
 
-    UF = w_r * retain_acc  +  w_f * (1 - forget_advantage)  -  w_p * time
+    UF = w_r * retain_acc  +  w_f * max(0, 1 − 2·MIA_AUC)  −  w_p * time
 
-    where forget_advantage = |MIA_AUC - 0.5|
-    (0 = perfectly forgotten, 0.5 = no forgetting at all)
+    where MIA_AUC is the signed per-identity mean AUC:
+    (0.0 = identity erased — retrain oracle sits here,
+     0.5 = no signal — the no-unlearning control sits here,
+     >0.5 = leak — forget still distinguishable)
 
 The search saves every trial result to a JSONL file so that runs can be
 resumed, and outputs a summary CSV for easy analysis.
@@ -151,7 +153,7 @@ RANDOM_RANGES = {
 
 def uf_score(
     retain_acc: float,
-    forget_advantage: float,   # |MIA_AUC - 0.5|, lower is better
+    mia_auc: float,        # SIGNED MIA AUC — 0.0 = erased, 0.5 = no signal, 1.0 = leak
     time_s: float,
     w_retain: float = 0.5,
     w_forget: float = 0.4,
@@ -160,15 +162,19 @@ def uf_score(
 ) -> float:
     """
     Composite Utility-Forgetting score ∈ [0, 1].
-      retain_acc        : higher → better utility
-      forget_advantage  : lower → better forgetting
-      time_s            : lower → faster
+      retain_acc  : higher → better utility
+      mia_auc     : LOWER → better forgetting.  Empirically in this
+                    framework the retrain oracle (identity erased) sits at
+                    AUC ≈ 0.00 and the no-unlearning control (nothing
+                    happened) at AUC ≈ 0.50, so the forget term rewards
+                    AUC BELOW 0.5 and zeroes at/above 0.5 (leak).
+      time_s      : lower → faster
 
     UF = w_r * retain_acc
-       + w_f * (1 - forget_advantage / 0.5)   # normalised: 0 adv → 1.0 score
-       - w_t * min(time_s / time_budget_s, 1)
+       + w_f * max(0, 1 − 2·mia_auc)   # AUC 0 → 1.0; AUC ≥ 0.5 → 0.0
+       − w_t * min(time_s / time_budget_s, 1)
     """
-    forget_score = max(0.0, 1.0 - forget_advantage / 0.5)
+    forget_score = max(0.0, 1.0 - 2.0 * mia_auc)
     time_score   = min(1.0, time_s / time_budget_s)
     return (w_retain * retain_acc
             + w_forget * forget_score
@@ -245,8 +251,9 @@ def run_trial(
                                   subset="holdout")
 
     retain_acc = eval_res.get("retain", {}).get("identity", {}).get("accuracy", 0.0)
-    f_adv = abs(per_id.get("mean_auc", 0.5) - 0.5)
-    score = uf_score(retain_acc, f_adv, elapsed)
+    mia_auc = per_id.get("mean_auc", 0.5)
+    f_adv = abs(mia_auc - 0.5)   # reported for diagnostics; NOT used in UF
+    score = uf_score(retain_acc, mia_auc, elapsed)
 
     return {
         "trial": trial_idx,
