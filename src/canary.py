@@ -243,7 +243,11 @@ if __name__ == "__main__":
         # resolution (csv_dir → data_dir) would look in results/<dataset>/
         # where images don't exist.  Absolutizing against the source data
         # root makes the canary CSV self-contained wherever it lands.
-        out_path = Path(args.out)
+        # NOTE: --out may be RELATIVE on HPC (slurm passes
+        # 'results/<dataset>/canary'), so resolve() against CWD first —
+        # otherwise the written paths stay relative and dataset.py
+        # re-resolves them, doubling the prefix.
+        out_path = Path(args.out).resolve()
         out_dir = out_path.parent
         canary_img_dir = out_dir / "canary_images"
         new_paths: list[str] = []
