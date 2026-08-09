@@ -36,6 +36,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
 
 
 # ── Method budget knobs (primary step parameter per method) ──────────────
@@ -126,7 +127,7 @@ def run_method(method: str, model, csv_path: str, device,
     t0 = time.time()
     try:
         result = registry[method](
-            model=model, csv_path=csv_path, device=device,
+            model=model, csv_path=csv_path, device=torch.device(device),
             **prepare_method_call(merged),
         )
         validate_unlearning_result(result, method)
@@ -188,6 +189,9 @@ def main() -> None:
     ap.add_argument("--step_scale", type=float, default=1.0,
                     help="shrink the BASE budget (e.g. 0.1 for CPU checks); "
                          "multipliers scale from that base")
+    ap.add_argument("--no_pretrain", action="store_true",
+                    help="random-init backbone (matches real pipeline: "
+                         "pretrained=True is the default)")
     ap.add_argument("--device", default="cpu")
     args = ap.parse_args()
 
@@ -213,7 +217,7 @@ def main() -> None:
     print(f"[feasibility] Training {args.epochs} epochs ({args.device})…")
     train(csv_path=str(sub_csv), save_dir=str(ckpts), epochs=args.epochs,
           batch_size=16, device_str=args.device, age_weight=0.5, seed=42,
-          pretrained=False)
+          pretrained=not args.no_pretrain)
     model_path = ckpts / "original_model_best.pt"
 
     from model import load_model
