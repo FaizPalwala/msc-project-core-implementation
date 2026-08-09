@@ -135,7 +135,9 @@ def run_method(method: str, model, csv_path: str, device,
         elapsed = time.time() - t0
     except Exception as e:  # feasibility gate: never let one method kill the run
         import traceback
-        return {"error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()[-500:]}
+        return {"method": method, "multiplier": multiplier,
+                "error": f"{type(e).__name__}: {e}",
+                "traceback": traceback.format_exc()[-500:]}
 
     # ── Evaluate (holdout = generalisation; forget acc → 0 is the signal) ──
     from evaluate import evaluate_full
@@ -156,19 +158,31 @@ def run_method(method: str, model, csv_path: str, device,
 
 
 def verdict(rows: list[dict], method: str) -> str:
-    """GO / TUNE / BROKEN from the multiplier response."""
+    """GO / TUNE / BROKEN from the multiplier response.
+
+    forget_id_acc == 0.0 is the PERFECT forget signal — must not be
+    conflated with missing (None).  The old code did `x or 1.0`, which
+    mapped 0.0 -> 1.0 (falsy-zero bug): every method that forgot got
+    'BROKEN'.  Use explicit None checks.
+    """
+    def _acc(r: dict, key: str, default: float) -> float:
+        v = r.get(key)
+        return float(v) if v is not None else default
+
     rs = [r for r in rows if r["method"] == method and "error" not in r]
     if not rs:
         return "ERROR"
     base = rs[0]
-    best_forget = min(r.get("forget_id_acc") or 1.0 for r in rs)
-    max_retain = max(r.get("retain_id_acc") or 0.0 for r in rs)
-    mia_at_best = [r for r in rs if (r.get("forget_id_acc") or 1.0) == best_forget][0].get("mia_mean_auc")
-    responded = best_forget < (base.get("forget_id_acc") or 1.0) - 0.05
+    best_forget = min(_acc(r, "forget_id_acc", 1.0) for r in rs)
+    max_retain = max(_acc(r, "retain_id_acc", 0.0) for r in rs)
+    base_forget = _acc(base, "forget_id_acc", 1.0)
+    responded = best_forget < base_forget - 0.05
     forgot = best_forget < 0.2
     retain_ok = max_retain >= 0.6
     if forgot and retain_ok:
         return "GO"
+    if forgot and not retain_ok:
+        return "TUNE(retain-collapse)"
     if responded and retain_ok:
         return "TUNE"
     if not responded:
