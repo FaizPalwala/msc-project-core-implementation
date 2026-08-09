@@ -255,6 +255,12 @@ _AGGREGATABLE_KEYS: set[str] = {
     "probe_identity_acc", "probe_age_acc", "probe_gender_acc",
     "retain_id_acc", "retain_age_acc", "forget_id_acc",
     "total_time_s",
+    # Per-popularity-bin metrics (imbalanced dataset): _flatten_metrics
+    # emits these but they were NOT in this set, so aggregation silently
+    # dropped them → aggregated JSON had no per-bin data → imbalanced
+    # equity plots found nothing to plot (F4).
+    "forget_id_acc_high", "forget_id_acc_medium", "forget_id_acc_low",
+    "mia_auc_high", "mia_auc_medium", "mia_auc_low",
 }
 
 

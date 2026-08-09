@@ -156,7 +156,7 @@ def evaluate_full(
         results[split] = evaluate_model(model, loader, device)
 
     if verbose:
-        logger.info(f"\n{'Split':<12} {'IdAcc':>9}  {'IdLoss':>9}  "
+        logger.info(f"{'Split':<12} {'IdAcc':>9}  {'IdLoss':>9}  "
               f"{'AgeAcc':>9}  {'AgeLoss':>9}  {'N':>7}")
         logger.info("-" * 58)
         for split, m in results.items():

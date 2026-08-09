@@ -643,7 +643,13 @@ def main() -> None:
             # ordering (order_seed = seed), on the SAME pretrained model —
             # μ±σ across seeds then isolates order sensitivity.  If the user
             # pinned --order_seed explicitly, offset it per seed instead.
-            order_seed = args.order_seed + si if args.order_seed is not None else seed
+            # Only on the uniform schedule: the Poisson stress test is a
+            # single fixed GDPR-arrival schedule (order permutation would
+            # defeat its purpose — see the guard in run_all_iterative).
+            if args.schedule == "uniform":
+                order_seed = args.order_seed + si if args.order_seed is not None else seed
+            else:
+                order_seed = None
             run_all_iterative(
                 csv_path=args.csv,
                 model_path=args.model,
