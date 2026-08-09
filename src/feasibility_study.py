@@ -21,7 +21,7 @@ Usage:
     python src/feasibility_study.py \
         --src_csv metadata/dataset.csv \
         --out results/feasibility \
-        [--methods ga ng_plus adaptiforget msg msg_kd ct ft srl] \
+        [--methods ga ng_plus adaptiforget msg msg_kd ct ft srl budget_scaled] \
         [--multipliers 1 3 10] \
         [--epochs 3] [--n_retain 8] [--n_forget 4] [--device cpu]
 """
@@ -48,6 +48,7 @@ BUDGET_KEYS: dict[str, str | None] = {
     "msg": "msg_steps",
     "msg_kd": "msg_steps",
     "adaptiforget": "max_steps",
+    "budget_scaled": "base_steps",  # scaled base; final budget = f(forget-set size)
     "ct": "ct_steps",
     "ft": "ft_epochs",
     "srl": "srl_epochs",      # falls back to 3 if key absent
@@ -57,7 +58,7 @@ BUDGET_KEYS: dict[str, str | None] = {
 
 # Methods the feasibility gate is designed to triage (all registries).
 DEFAULT_METHODS = ["ga", "ng_plus", "adaptiforget", "msg", "msg_kd",
-                   "ct", "ft", "srl"]
+                   "ct", "ft", "srl", "budget_scaled"]
 
 
 def subsample_csv(src_csv: str, out_csv: str, n_retain: int, n_forget: int,

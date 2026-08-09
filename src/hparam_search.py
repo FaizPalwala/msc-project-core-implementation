@@ -95,6 +95,12 @@ GRIDS = {
         "kl_weight_max":          [0.5, 0.8],
         "mask_refresh_every":     [50, 100],
     },
+    "budget_scaled": {
+        "base_steps":             [150, 300, 600],
+        "budget_exponent":        [0.25, 0.5, 0.75],
+        "budget_ref_images":      [150, 300],
+        "ga_lr":                  [5e-5, 1e-4],
+    },
     # Baselines — included so we can compare sensitivity
     "ga": {
         "ga_steps": [100, 200, 400],

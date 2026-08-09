@@ -10,7 +10,7 @@ each bin reaches its per-bin oracle).
 Categories (fixed by method family, not by results):
     baseline : ga, srl, ft
     sota     : ng_plus, msg, ct
-    novel    : msg_kd, adaptiforget
+    novel    : msg_kd, adaptiforget, budget_scaled
 
 Ranking metric: hparam_search.uf_score(retain_acc, forget_advantage,
 time_s) — the same composite used by the HP search, so selection is
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 CATEGORIES = {
     "baseline": ["ga", "srl", "ft"],
     "sota":     ["ng_plus", "msg", "ct"],
-    "novel":    ["msg_kd", "adaptiforget"],
+    "novel":    ["msg_kd", "adaptiforget", "budget_scaled"],
 }
 
 

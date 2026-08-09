@@ -53,6 +53,7 @@ METHOD_DISPLAY = {
     "ct":            "CT",
     "msg_kd":        "MSG-KD †",
     "adaptiforget":  "AdaptiForget ‡",
+    "budget_scaled": "Budget-Scaled GA ‡",
 }
 
 

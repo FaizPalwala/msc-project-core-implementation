@@ -4,8 +4,9 @@ novel_variant.py — Phase 4 Variants (dual-head).
 Methods:
   MSG-KD       — MSG with KL distillation on retain outputs
   AdaptiForget — adaptive variant: scheduled KL, mask refresh, dual early stopping
+  BudgetScaled — gradient ascent whose step budget adapts to the forget-set size
 
-Both operate on the combined dual-head loss.
+All operate on the combined dual-head loss.
 """
 
 from __future__ import annotations
@@ -45,6 +46,85 @@ def _cycle(loader):
     while True:
         for batch in loader:
             yield batch
+
+
+# ── Budget-Scaled GA (novel #2) ──────────────────────────────────────────────
+
+def budget_scaled(
+    model: nn.Module,
+    csv_path: str,
+    device: torch.device,
+    forget_step: Optional[int] = None,
+    base_steps: int = 300,
+    budget_exponent: float = 0.5,
+    budget_ref_images: int = 300,
+    min_steps: int = 25,
+    max_steps: int = 6000,
+    ga_lr: float = 1e-4,
+    batch_size: int = 32,
+    age_weight: float = 0.5,
+    retain_reg: bool = True,
+    retain_reg_ratio: float = 0.5,
+    **kwargs,
+) -> dict:
+    """Budget-Scaled GA: gradient ascent whose step budget adapts to the
+    forget-set size.
+
+    Motivation (from the feasibility gate): GA with a FIXED step budget
+    under-forgets at scale (750-id: 300 steps over 5,400 forget-train
+    images ≈ 0.06 passes/image → forget acc 0.999) and over-erases at
+    small scale (12-id: 300 steps over 32 images ≈ 9 passes/image →
+    retain collapse).  The budget that works at one dataset size is
+    wrong at another — the C2 finding was systematic budget
+    miscalibration, not structural failure.
+
+    This method makes the budget a function of the forget-set size:
+
+        steps = clip(round(base_steps * (n_forget_train / budget_ref) ** exp),
+                     min_steps, max_steps)
+
+    with exp=0.5 (sqrt) damping so the budget grows sublinearly:
+    n_forget=32  → ~98 steps (small set: fewer passes, protects retain)
+    n_forget=300 → 300 steps (calibration point: base_steps unchanged)
+    n_forget=5400→ ~1273 steps (large set: enough passes to actually erase)
+
+    The unlearning loop is otherwise identical to GA (ascent on the
+    combined loss + interleaved retain descent), so this isolates the
+    budget-adaptation contribution as a controlled comparison.
+    """
+    from baselines import gradient_ascent
+
+    t0 = time.time()
+    f_split = forget_split_name(forget_step, kwargs.get("schedule", "uniform")) \
+        if forget_step is not None else "forget"
+    subset_ = kwargs.get("subset", "all")
+    ds = VirtualIdentityDataset(csv_path, split=f_split, transform=get_val_transform(),
+                                subset=subset_, order_seed=kwargs.get("order_seed"))
+    n_forget_train = len(ds)
+
+    steps = int(round(base_steps * (n_forget_train / max(budget_ref_images, 1)) ** budget_exponent))
+    steps = int(min(max(steps, min_steps), max_steps))
+
+    logger.info(f"  [BudgetScaled] forget_train={n_forget_train} imgs → "
+          f"steps={steps} (base={base_steps}, ref={budget_ref_images}, exp={budget_exponent})")
+
+    result = gradient_ascent(
+        model=model, csv_path=csv_path, device=device,
+        ga_steps=steps, ga_lr=ga_lr, batch_size=batch_size,
+        age_weight=age_weight, forget_step=forget_step,
+        retain_reg=retain_reg, retain_reg_ratio=retain_reg_ratio,
+        **kwargs,
+    )
+    result["method"] = "BudgetScaled"
+    result["metrics"]["budget_scaled"] = {
+        "n_forget_train": int(n_forget_train),
+        "steps": steps,
+        "base_steps": base_steps,
+        "budget_exponent": budget_exponent,
+        "budget_ref_images": budget_ref_images,
+    }
+    result["metrics"]["total_time_s"] = round(time.time() - t0, 2)
+    return result
 
 
 def _build_mask(model, f_loader, r_loader, criterion, device,
@@ -476,4 +556,5 @@ def adaptiforget(
 NOVEL_REGISTRY = {
     "msg_kd": msg_kd,
     "adaptiforget": adaptiforget,
+    "budget_scaled": budget_scaled,
 }

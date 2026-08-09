@@ -1,0 +1,20 @@
+# Budget-Scaled GA (novel #2) — gradient ascent whose step budget adapts
+# to the forget-set size.  Fixed budgets under-forget at scale and
+# over-erase at small scale (feasibility C2 finding); this makes the
+# budget a function of n_forget_train:
+#
+#   steps = clip(round(base_steps * (n_forget_train / budget_ref) ** exp),
+#                min_steps, max_steps)
+#
+# exp=0.5 (sqrt) → sublinear growth: 32 imgs → ~98 steps, 300 → 300,
+# 5,400 → ~1,273.  Unlearning loop is otherwise identical to GA.
+base_steps: 300
+budget_exponent: 0.5
+budget_ref_images: 300
+min_steps: 25
+max_steps: 6000
+ga_lr: 1.0e-4   # NOTE: dotted form required — PyYAML parses bare '1e-4' as a string
+batch_size: 32
+age_weight: 0.5
+retain_reg: true
+retain_reg_ratio: 0.5

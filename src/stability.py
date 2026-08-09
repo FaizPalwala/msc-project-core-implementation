@@ -68,6 +68,7 @@ METHOD_STYLES = {
     "msg_kd":        {"color": "#81c784", "ls": "-",  "marker": "P", "label": "MSG-KD"},
     "ct":            {"color": "#ba68c8", "ls": "-",  "marker": "h", "label": "CT"},
     "adaptiforget":  {"color": "#ff7043", "ls": "-",  "marker": "*", "label": "AdaptiForget"},
+    "budget_scaled": {"color": "#8d6e63", "ls": "-.", "marker": "X", "label": "Budget-Scaled"},
 }
 ORACLE_COLOR = "#1565c0"
 
