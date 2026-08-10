@@ -5,7 +5,7 @@
 #SBATCH --job-name=unlearn_pkg
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
-#SBATCH --time=00:30:00
+#SBATCH --time=01:30:00
 #SBATCH --partition=nodes
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
@@ -52,4 +52,3 @@ zipinfo -t "$ZIP_PATH" >/dev/null 2>&1 || { echo "ERROR: zip failed or empty" >&
 N_FILES="$(zipinfo -t "$ZIP_PATH" | awk '{print $1}')"
 SIZE_MB="$(du -m "$ZIP_PATH" | cut -f1)"
 echo "[$(date)] [OK] $ZIP_PATH — $N_FILES files, ${SIZE_MB} MB"
-echo "  Retrieve: scp kxvs0578@login1.aire.lee.alces.network:$ZIP_PATH ."
