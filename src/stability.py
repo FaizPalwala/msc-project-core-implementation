@@ -654,7 +654,11 @@ def run_stability_analysis(
 
     logger.info(f"\n[StabilityAnalysis] Loading {combined_csv}…")
     df = load_data(combined_csv)
-    df = df[df.get("type", "") != "re_emergence"]  # filter re-emergence rows
+    # Filter re-emergence rows ONLY if the column exists.  df.get("type","")
+    # returns the SCALAR default when the column is absent, so
+    # df[scalar_bool] → KeyError: True (the 7081731/7081733 crash).
+    if "type" in df.columns:
+        df = df[df["type"] != "re_emergence"]
 
     # ── Ad-hoc subset filters ───────────────────────────────────────────
     if methods:
