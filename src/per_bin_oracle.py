@@ -21,8 +21,10 @@ Usage:
 Outputs (per bin B):
     oracle_{B}.pt              — retrain excluding bin-B forget identities
     oracle_{B}_eval.json       — retain/forget eval of the oracle itself
-    per_bin_distance.json      — weight+behavioral distance from each
-                                 single-shot unlearned model to its bin oracle
+    per_bin_distance.json      — behavioral distance from each single-shot
+                                 unlearned model to its bin oracle
+                                 (|forget_acc(unlearned, bin) −
+                                  forget_acc(oracle_bin, bin)|)
 """
 
 from __future__ import annotations
@@ -112,8 +114,17 @@ def run_per_bin_oracle(csv_path: str, model_path: str, out_dir: str,
                     f"{ev.get('retain',{}).get('identity',{}).get('accuracy'):.4f}")
 
     # ── Per-bin distance: each single-shot unlearned model vs its bin oracle ──
-    # Weight distance: L2 of concatenated state_dicts.  Behavioral distance:
-    # |forget_id_acc(unlearned) − forget_id_acc(oracle)| on the bin's holdout.
+    # Behavioral distance per bin:
+    #   |forget_holdout_acc(unlearned, bin) − forget_holdout_acc(oracle_bin, bin)|
+    # where oracle_bin's bin-B forget acc ≈ 0 (never trained on them).
+    # NOTE: the aggregated JSON is FLAT (methods at top level, no
+    # "aggregated" wrapper) and carries per-bin keys forget_id_acc_{bin}
+    # (F4).  The oracle reference must come from evaluate_per_demographic
+    # — the whole-eval forget.identity.accuracy LEAKS across bins (an
+    # oracle excludes only its own bin's forgets, so it still knows the
+    # other bins' identities and scores ~0.95 overall).
+    from evaluate import evaluate_per_demographic
+
     single_shot_dir = out_path.parent / "single_shot_best"
     distance: dict[str, dict] = {}
     if single_shot_dir.exists():
@@ -121,24 +132,35 @@ def run_per_bin_oracle(csv_path: str, model_path: str, out_dir: str,
         if agg_path.exists():
             with open(agg_path) as fh:
                 agg = json.load(fh)
+            # oracle per-bin forget-holdout acc (demographic eval, no leak)
+            oracle_ref: dict[str, float] = {}
             for b in BINS:
                 oracle_m = load_model(oracles[b], device=str(device))
-                oracle_sd = {k: v.float().cpu() for k, v in oracle_m.state_dict().items()}
+                demog = evaluate_per_demographic(oracle_m, csv_path, device,
+                                                 subset="holdout")
+                key = f"popularity_{b}"
+                acc = None
+                if key in demog and isinstance(demog[key], dict):
+                    acc = demog[key].get("identity", {}).get("accuracy")
+                oracle_ref[b] = float(acc) if acc is not None else 0.0
+                logger.info(f"  oracle[{b}] per-bin forget-holdout acc = {oracle_ref[b]:.4f}")
+            for b in BINS:
                 bin_rows: dict[str, dict] = {}
-                for method, data in agg.get("aggregated", {}).items():
-                    # behavioral distance on this bin's holdout
-                    ev = data.get("evaluation", {})
-                    fg_acc = ev.get("forget", {}).get("identity", {}).get("accuracy")
-                    orc_ev = json.loads(Path(out_path / f"oracle_{b}_eval.json").read_text())
-                    orc_fg = orc_ev.get("forget", {}).get("identity", {}).get("accuracy", 0.0)
+                for method, data in agg.items():
+                    if not isinstance(data, dict):
+                        continue
+                    # per-bin forget acc of the unlearned model (flat key);
+                    # fall back to overall forget_id_acc only if per-bin
+                    # aggregation was unavailable (balanced datasets).
+                    fg_acc = data.get(f"forget_id_acc_{b}")
+                    if fg_acc is None:
+                        fg_acc = data.get("forget_id_acc")
                     if fg_acc is None:
                         continue
-                    # weight distance needs the per-seed unlearned model;
-                    # fall back to behavioral only when unavailable
                     bin_rows[method] = {
                         "forget_acc_unlearned": fg_acc,
-                        "forget_acc_oracle": orc_fg,
-                        "behavioral_distance": abs(fg_acc - orc_fg),
+                        "forget_acc_oracle": oracle_ref[b],
+                        "behavioral_distance": abs(fg_acc - oracle_ref[b]),
                     }
                 distance[b] = bin_rows
             with open(out_path / "per_bin_distance.json", "w") as fh:
