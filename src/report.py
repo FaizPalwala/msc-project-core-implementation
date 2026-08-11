@@ -413,37 +413,40 @@ def _render_iterative_md(df: pd.DataFrame, schedule: str = "uniform") -> str:
 
 
 def _render_canary_md(canary: dict[str, Any]) -> str:
-    """Markdown table: canary feature-similarity per method.
+    """Markdown table: canary-detection per method (Thudi et al. Tier-4).
 
-    After unlearning, canary identities' features should no longer encode
-    the canary pattern — feature_similarity_to_clean should be low
-    (toward 0).  Higher = canary pattern persists (unlearning failed).
+    canary_detection_acc = logistic-regression accuracy separating
+    canary-tagged from clean-original features of the same identity.
+    Chance (≈0.50) = the unlearned model no longer encodes the canary
+    pattern = erased.  Higher (→1.0) = pattern persists = failed.
     """
     if not canary:
         return "_No canary verification results available._\n"
 
     lines = [
         "",
-        "| Method | Identity | Images | Feat-norm | Sim-to-clean (↓ better) |",
-        "|--------|----------|--------|-----------|--------------------------|",
+        "| Method | Identity | Images | Det-acc (↓ good, 0.5 = erased) | Feat-sim (↑ good) |",
+        "|--------|----------|--------|-----------------------------------|-------------------|",
     ]
     for method, per_id in sorted(canary.items()):
         if not isinstance(per_id, dict) or not per_id:
             lines.append(f"| {method} | — | — | — | — |")
             continue
         for cid, m in sorted(per_id.items(), key=lambda kv: int(kv[0])):
+            det = m.get("canary_detection_acc", float("nan"))
+            det_str = f"{det:.4f}" if isinstance(det, (int, float)) else str(det)
             sim = m.get("feature_similarity_to_clean", float("nan"))
             sim_str = f"{sim:.4f}" if isinstance(sim, (int, float)) else str(sim)
-            norm = m.get("mean_feature_norm", "—")
-            norm_str = f"{norm:.2f}" if isinstance(norm, (int, float)) else str(norm)
             lines.append(
                 f"| {method} | {cid} | {m.get('n_images', '—')} | "
-                f"{norm_str} | {sim_str} |"
+                f"{det_str} | {sim_str} |"
             )
     lines.append("")
-    lines.append("_Lower feature-similarity-to-clean = canary pattern removed. "
-                 "Interpretation requires comparison against the pre-unlearning "
-                 "model (retain the `original_model_best.pt` from the canary run)._")
+    lines.append("_Det-acc ≈ 0.50 = canary pattern erased (detector at chance); "
+                 "→ 1.0 = pattern persists.  Feat-sim = mean cosine similarity "
+                 "between canary-tagged and clean-original features of the same "
+                 "image (1.0 = no feature-level effect).  Compare against the "
+                 "pre-unlearning model's det-acc (≈1.0, pattern present)._")
     return "\n".join(lines)
 
 

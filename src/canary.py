@@ -52,6 +52,7 @@ import torch
 import torch.nn as nn
 from PIL import Image
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
 
 from model import load_model
 from device_utils import resolve_device
@@ -104,29 +105,72 @@ def insert_canary(
 # ── Verification ──────────────────────────────────────────────────────────────
 
 
+def _clean_path_for(img_path: Path, canary_marker: str = "canary_images") -> Path | None:
+    """Recover the ORIGINAL (canary-free) image path from a canary copy.
+
+    insert_canary() writes canary-pattern copies under
+    <out_dir>/canary_images/<rel_path> and points the canary CSV at them;
+    non-canary rows keep their original absolute paths.  A canary identity's
+    clean counterpart is the original path with the canary_images segment
+    removed.  Returns None if the path isn't a canary copy (no marker).
+    """
+    parts = img_path.parts
+    if canary_marker not in parts:
+        return None
+    idx = parts.index(canary_marker)
+    # Drop everything up to and including canary_images/ → original relative
+    # path from the data root; keep the original image filename.
+    rel = Path(*parts[idx + 1:])
+    return rel
+
+
 def verify_canary_unlearning(
     model: nn.Module,
     csv_path: str,
     device: torch.device,
     identity_ids: list[int],
+    src_csv: str | None = None,
     batch_size: int = 32,
 ) -> dict[str, Any]:
-    """Verify that canaries have been unlearned.
+    """Verify that canaries have been unlearned (Thudi et al. Tier-4).
 
-    1. Canary-vs-clean classifier test.
-    2. Gradient extraction test.
+    For each canary identity, collect 512-d feature vectors of:
+      - CANARY-tagged images   (rows whose image_path points into
+                                canary_images/ — the pixel-pattern copies)
+      - CLEAN originals        (same images WITHOUT the canary pattern,
+                                recovered from the original data root)
+
+    Then fit a logistic-regression detector on the two groups.  If the
+    unlearned model no longer encodes the canary pattern, the two feature
+    distributions overlap → detector accuracy ≈ chance (0.5).  If the
+    pattern persists, the detector separates them → accuracy → 1.0.
+
+    Metrics per identity:
+      canary_detection_acc   : detector accuracy (0.5 = erased, 1.0 = persists)
+      feature_similarity     : mean cosine similarity between canary and
+                               clean features of the SAME image (1.0 = the
+                               pattern has no feature-level effect)
+      mean_feature_norm      : canary-group feature norm (context)
+
+    src_csv: the ORIGINAL (pre-canary) dataset CSV — its location defines
+    the data root (bench/) where clean images live.  Falls back to the
+    canary CSV's parent.parent when not given (works when the canary CSV
+    is written beside the source metadata, as in smoke tests).
     """
     from dataset import VirtualIdentityDataset, get_val_transform
+
+    # Clean images live under the ORIGINAL data root (bench/), which is
+    # defined by the SOURCE CSV's location: bench/metadata/dataset.csv → bench/.
+    # The canary CSV lives in results/<ds>/canary/, so its own parent.parent
+    # is NOT the data root — that's why src_csv must be passed explicitly.
+    src_p = Path(src_csv).resolve() if src_csv else Path(csv_path).resolve()
+    data_root = src_p.parent.parent
 
     results: dict[str, Any] = {}
 
     for cid in identity_ids:
-        # Canary verification deliberately inspects ALL images of the canary
-        # identity (train + holdout) — the canary pattern was inserted into
-        # every image before training, so we verify its erasure everywhere.
-        # Filter directly on identity_id (the old forget_variant_0_{cid%4}
-        # approximation is gone — per-identity selection now keys on the
-        # identity_id column).
+        # All images of the canary identity (train + holdout — the pattern
+        # was inserted into every image before training).
         ds = VirtualIdentityDataset(
             csv_path, split="forget",
             transform=get_val_transform(),
@@ -136,61 +180,80 @@ def verify_canary_unlearning(
         if not mask.any():
             results[str(cid)] = {"error": f"identity_id {cid} not in forget split"}
             continue
-        ds.df = ds.df[mask].reset_index(drop=True)
-        # Collect features for this identity's images
-        loader = torch.utils.data.DataLoader(
-            ds, batch_size=batch_size, shuffle=False,
-            num_workers=0, pin_memory=True,
-        )
-
-        model.eval()
-        all_feats: list[np.ndarray] = []
-        with torch.no_grad():
-            for imgs, _, _ in loader:
-                imgs = imgs.to(device)
-                feats = model.feature_vector(imgs)
-                all_feats.append(feats.cpu().numpy())
-
-        if not all_feats:
-            results[str(cid)] = {"error": "no images found"}
+        sub = ds.df[mask].reset_index(drop=True)
+        # Split rows into canary-tagged (pointing into canary_images/) and
+        # the rest (original clean paths).
+        can_rows = sub[sub["image_path"].str.contains("canary_images", na=False)]
+        clean_rows = sub[~sub["image_path"].str.contains("canary_images", na=False)]
+        if len(can_rows) == 0:
+            results[str(cid)] = {"error": f"no canary-tagged rows for id {cid}"}
             continue
 
-        features = np.concatenate(all_feats, axis=0)
+        model.eval()
+        feats = {"canary": [], "clean": []}
 
-        # Generate "clean" versions: remove canary and re-extract
-        clean_feats: list[np.ndarray] = []
-        for img, _, _ in loader:
-            img_np = (img.permute(0, 2, 3, 1).cpu().numpy() * 255).astype(np.uint8)
-            # We can't easily strip canaries from preprocessed images,
-            # so we skip the clean-comparison test in this lightweight version.
-            break
-        loader2 = torch.utils.data.DataLoader(
-            ds, batch_size=batch_size, shuffle=False,
-            num_workers=0, pin_memory=True,
+        def _feats(df_rows) -> np.ndarray:
+            out = []
+            d = VirtualIdentityDataset(csv_path, split="forget",
+                                       transform=get_val_transform(),
+                                       subset="all")
+            d.df = df_rows.reset_index(drop=True)
+            loader = torch.utils.data.DataLoader(
+                d, batch_size=batch_size, shuffle=False,
+                num_workers=0, pin_memory=True,
+            )
+            with torch.no_grad():
+                for imgs, _, _ in loader:
+                    imgs = imgs.to(device)
+                    out.append(model.feature_vector(imgs).cpu().numpy())
+            return np.concatenate(out, axis=0) if out else np.zeros((0, 512))
+
+        feats["canary"] = _feats(can_rows)
+
+        # Clean counterparts: for canary rows, recover the ORIGINAL path
+        # (strip the canary_images segment); for any clean rows, use as-is.
+        clean_paths: list[str] = []
+        for _, row in can_rows.iterrows():
+            p = Path(row["image_path"])
+            rel = _clean_path_for(p)
+            if rel is not None:
+                clean_paths.append(str((data_root / rel).resolve()))
+            else:
+                clean_paths.append(str(p))
+        clean_rows2 = sub.copy()
+        clean_rows2["image_path"] = clean_paths
+        feats["clean"] = _feats(clean_rows2)
+
+        n_c = len(feats["canary"])
+        n_cl = len(feats["clean"])
+        if n_c < 4 or n_cl < 4:
+            results[str(cid)] = {"error": f"too few images: canary={n_c} clean={n_cl}"}
+            continue
+
+        # 1) Canary-detection classifier (Thudi et al.): chance ⇒ erased.
+        X = np.concatenate([feats["canary"], feats["clean"]], axis=0)
+        y = np.concatenate([np.ones(n_c), np.zeros(n_cl)])
+        X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-8)
+        try:
+            clf = LogisticRegression(max_iter=500, C=1.0)
+            accs = cross_val_score(clf, X, y, cv=min(4, n_c, n_cl), scoring="accuracy")
+            det_acc = float(np.mean(accs))
+        except Exception:
+            det_acc = float("nan")
+
+        # 2) Same-image cosine similarity (canary vs clean originals).
+        n_pair = min(n_c, n_cl)
+        a = feats["canary"][:n_pair]
+        b = feats["clean"][:n_pair]
+        sims = np.sum(a * b, axis=1) / (
+            np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1) + 1e-8
         )
-        with torch.no_grad():
-            for imgs, _, _ in loader2:
-                imgs = imgs.to(device)
-                f2 = model.feature_vector(imgs)
-                clean_feats.append(f2.cpu().numpy())
-
-        if clean_feats:
-            features_clean = np.concatenate(clean_feats, axis=0)
-        else:
-            features_clean = features
-
-        # Simple test: cosine similarity between image features
-        # After unlearning, intra-identity variance should match inter-identity
-        sim = np.mean([
-            np.dot(features[i], features_clean[i]) /
-            (np.linalg.norm(features[i]) * np.linalg.norm(features_clean[i]) + 1e-8)
-            for i in range(min(len(features), len(features_clean)))
-        ])
 
         results[str(cid)] = {
-            "n_images": len(features),
-            "mean_feature_norm": float(np.linalg.norm(features, axis=1).mean()),
-            "feature_similarity_to_clean": round(float(np.mean(sim)), 4),
+            "n_images": n_c,
+            "mean_feature_norm": float(np.linalg.norm(feats["canary"], axis=1).mean()),
+            "canary_detection_acc": round(float(det_acc), 4),
+            "feature_similarity_to_clean": round(float(np.mean(sims)), 4),
         }
 
     return results
@@ -219,6 +282,10 @@ if __name__ == "__main__":
     ver.add_argument("--csv",        type=str, required=True)
     ver.add_argument("--model",      type=str, required=True)
     ver.add_argument("--identities", type=int, nargs="+", required=True)
+    ver.add_argument("--src_csv",    type=str, default=None,
+                     help="ORIGINAL (pre-canary) dataset CSV — defines the data "
+                          "root where clean images live (bench/).  Required for "
+                          "a meaningful canary-vs-clean comparison.")
     ver.add_argument("--device",     type=str, default="auto")
 
     args = parser.parse_args()
@@ -289,6 +356,7 @@ if __name__ == "__main__":
         model = load_model(args.model, device=str(device))
         results = verify_canary_unlearning(
             model, args.csv, device, args.identities,
+            src_csv=args.src_csv,
         )
         # Data output → stdout so `| tee file.json` captures raw JSON;
         # human-readable confirmation → logger (stderr).

@@ -116,6 +116,7 @@ for method in ga adaptiforget; do
         echo "  [verify] $method"
         python src/canary.py verify \
             --csv "$CANARY_CSV" \
+            --src_csv "$CSV" \
             --model "$MODEL" \
             --identities "${IDENTITIES[@]}" \
             2>&1 | tee "$OUT/verify_${method}.json"
