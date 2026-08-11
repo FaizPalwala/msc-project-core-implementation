@@ -62,24 +62,57 @@ logger = logging.getLogger(__name__)
 # ── Canary pattern generator ──────────────────────────────────────────────────
 
 
-def _make_canary(identity_id: int, size: int = 8) -> np.ndarray:
-    """Generate a deterministic 8×8×3 pixel canary unique to this identity.
+def _make_canary(identity_id: int, size: int = 32, magnitude: int = 60) -> np.ndarray:
+    """Generate a deterministic size×size×3 pixel canary unique to this identity.
 
     Uses identity_id as seed so the pattern is reproducible.
-    The pattern uses low-magnitude colour offsets (Δ ≤ 4 per channel at 8-bit)
-    to remain visually imperceptible.
+
+    Args:
+        identity_id: Seed — each identity gets a distinct pattern.
+        size:        Canary side length in pixels.
+        magnitude:   Max colour offset per channel (8-bit).
+
+    Design notes (empirically established on MPS, Aug 2026):
+      - v1.2 used size=8 / magnitude=2 single-corner: the positive control
+        showed that pattern is BELOW the model's feature noise floor
+        (det-acc 0.478 ≈ chance on the canary-trained model).
+      - Even a 64×64 single patch at ±100 is invisible (cos-sim 0.9995):
+        train-time RandomResizedCrop crops it out most of the time.
+      - Detectable configurations REQUIRE multi-location placement (see
+        insert_canary): 9×32×32 @ ±60 → cos-sim 0.994 (2% of pixels,
+        survives any crop).  This is the default.
     """
     rng = np.random.RandomState(identity_id)
-    # Small offsets: ±2 in [0,255] range
-    canary = (rng.randint(0, 5, size=(size, size, 3)) - 2).astype(np.int16)
-    return canary
+    # Offsets in ±magnitude
+    canary = (rng.randint(0, 2 * magnitude + 1, size=(size, size, 3)) - magnitude)
+    # Force at least one non-zero channel per pixel (dense, learnable)
+    zero_mask = (canary == 0).all(axis=2)
+    canary[zero_mask, 0] = 1
+    return canary.astype(np.int16)
+
+
+def _grid_positions(size: int, img_h: int = 224, img_w: int = 224) -> list[tuple[int, int]]:
+    """3×3 grid of (y, x) top-left positions spanning the image.
+
+    The pattern is repeated at every grid cell so that RandomResizedCrop
+    during training always retains at least one full copy — a single
+    corner patch is cropped out most of the time and never learned.
+    Cells that would overflow the image edge are clipped by insert_canary.
+    """
+    step_y = max((img_h - size) // 2, 1)
+    step_x = max((img_w - size) // 2, 1)
+    return [
+        (y * step_y, x * step_x)
+        for y in range(3) for x in range(3)
+    ]
 
 
 def insert_canary(
     img: np.ndarray,
     identity_id: int,
-    size: int = 8,
-    position: tuple[int, int] = (0, 0),
+    size: int = 32,
+    magnitude: int = 60,
+    position: tuple[int, int] | list[tuple[int, int]] | None = None,
 ) -> np.ndarray:
     """Add identity-specific canary to an image array in-place.
 
@@ -87,18 +120,28 @@ def insert_canary(
         img:         H×W×3 numpy array (uint8, 0–255).
         identity_id: Which identity's pattern to use.
         size:        Canary size (square).
-        position:    (y, x) top-left corner.
+        magnitude:   Max colour offset per channel (8-bit).
+        position:    (y, x) top-left corner, list of positions, or None
+                     for the default 3×3 grid (recommended — a single
+                     position is invisible to the model after random
+                     cropping; see _make_canary design notes).
 
     Returns:
         Modified image (copy of input).
     """
     img = img.copy().astype(np.int16)
-    canary = _make_canary(identity_id, size)
-    y, x = position
+    canary = _make_canary(identity_id, size, magnitude)
     h, w = img.shape[:2]
-    end_y, end_x = min(y + size, h), min(x + size, w)
-    cy, cx = end_y - y, end_x - x
-    img[y:end_y, x:end_x] += canary[:cy, :cx]
+    positions = position if position is not None else _grid_positions(size, h, w)
+    if isinstance(positions, tuple):
+        positions = [positions]
+    for pos in positions:
+        y, x = pos
+        end_y, end_x = min(y + size, h), min(x + size, w)
+        cy, cx = end_y - y, end_x - x
+        if cy <= 0 or cx <= 0:
+            continue
+        img[y:end_y, x:end_x] += canary[:cy, :cx]
     return np.clip(img, 0, 255).astype(np.uint8)
 
 
