@@ -159,12 +159,27 @@ def verify_canary_unlearning(
     """
     from dataset import VirtualIdentityDataset, get_val_transform
 
-    # Clean images live under the ORIGINAL data root (bench/), which is
-    # defined by the SOURCE CSV's location: bench/metadata/dataset.csv → bench/.
-    # The canary CSV lives in results/<ds>/canary/, so its own parent.parent
-    # is NOT the data root — that's why src_csv must be passed explicitly.
-    src_p = Path(src_csv).resolve() if src_csv else Path(csv_path).resolve()
-    data_root = src_p.parent.parent
+    # Clean images live under the ORIGINAL data root (bench/).  Derive it
+    # from the CSV's own NON-canary rows: those keep absolute paths into
+    # <data_root>/images/... (insert_canary only rewrites canary identities'
+    # paths; retain/other rows are untouched).  Robust to wherever the CSV
+    # is mounted — do NOT derive from csv_path.parent.parent, which is only
+    # correct when the CSV sits exactly two levels below the data root
+    # (e.g. bench/metadata/dataset.csv → bench/) and breaks for temp copies.
+    df0 = VirtualIdentityDataset(csv_path, split="retain+forget", transform=get_val_transform(),
+                                 subset="all").df
+    non_can = df0[~df0["image_path"].astype(str).str.contains("canary_images", na=False)]
+    data_root: Path | None = None
+    if len(non_can):
+        sample = str(non_can["image_path"].iloc[0])
+        p = Path(sample)
+        if "/images/" in sample:
+            data_root = Path(sample.split("/images/")[0])
+        elif p.is_absolute():
+            data_root = p.parents[0]
+    if data_root is None:  # last resort: CSV two levels above images/
+        src_p = Path(src_csv).resolve() if src_csv else Path(csv_path).resolve()
+        data_root = src_p.parent.parent
 
     results: dict[str, Any] = {}
 
@@ -249,11 +264,46 @@ def verify_canary_unlearning(
             np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1) + 1e-8
         )
 
+        # 3) Output-space diagnostic: does the model STILL recognise the
+        # canary identity on canary-tagged vs clean images?  After true
+        # unlearning BOTH should drop to chance; before unlearning the
+        # canary-tagged images (which the model was trained on) typically
+        # show HIGHER identity confidence than clean holdout.  This is
+        # the Thudi-style membership signal in output space.
+        def _id_conf(df_rows) -> tuple[float, float]:
+            d = VirtualIdentityDataset(csv_path, split="forget",
+                                       transform=get_val_transform(),
+                                       subset="all")
+            d.df = df_rows.reset_index(drop=True)
+            loader = torch.utils.data.DataLoader(
+                d, batch_size=batch_size, shuffle=False,
+                num_workers=0, pin_memory=True,
+            )
+            correct = total = 0
+            confs: list[float] = []
+            with torch.no_grad():
+                for imgs, id_lbls, _ in loader:
+                    imgs = imgs.to(device)
+                    id_lbls = id_lbls.to(device)
+                    id_logits, _ = model(imgs)
+                    probs = torch.softmax(id_logits, dim=1)
+                    correct += (id_logits.argmax(1) == id_lbls).sum().item()
+                    total += len(id_lbls)
+                    confs.extend(probs[torch.arange(len(id_lbls)), id_lbls].cpu().tolist())
+            return (correct / max(total, 1), float(np.mean(confs)) if confs else 0.0)
+
+        can_id_acc, can_conf = _id_conf(can_rows)
+        cln_id_acc, cln_conf = _id_conf(clean_rows2)
+
         results[str(cid)] = {
             "n_images": n_c,
             "mean_feature_norm": float(np.linalg.norm(feats["canary"], axis=1).mean()),
             "canary_detection_acc": round(float(det_acc), 4),
             "feature_similarity_to_clean": round(float(np.mean(sims)), 4),
+            "id_acc_canary": round(float(can_id_acc), 4),
+            "id_acc_clean": round(float(cln_id_acc), 4),
+            "id_conf_canary": round(float(can_conf), 4),
+            "id_conf_clean": round(float(cln_conf), 4),
         }
 
     return results
