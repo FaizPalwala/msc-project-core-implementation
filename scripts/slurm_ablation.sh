@@ -46,10 +46,15 @@ mkdir -p "$LOG_DIR"
 CSV="${1:-$CSV_DEFAULT}"
 OUT="${2:-$OUT_BASE/ablation}"
 
-MODEL="$OUT/../checkpoints/original_model_best.pt"     # main train job's checkpoint
+# Main train job's checkpoint lives in OUT_BASE/checkpoints (OUT_BASE is
+# results/<dataset>, a sibling of the ablation dir).  NOTE: do NOT build
+# this path as "$OUT/../checkpoints" — bash `[ -f ]` resolves `..` through
+# the intermediate directory, and OUT (ablation/) does not exist until the
+# mkdir below, so the check would fail spuriously (the 7081719/7081738 bug).
+mkdir -p "$OUT"
+MODEL="$OUT_BASE/checkpoints/original_model_best.pt"
 [ -f "$MODEL" ] || { echo "ERROR: trained model not found: $MODEL" >&2; exit 1; }
 
-mkdir -p "$OUT"
 cd "$PROJECT_DIR"
 echo "[$(date)] Ablation study on $CSV (model $MODEL) → $OUT"
 
