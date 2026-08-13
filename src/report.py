@@ -425,40 +425,53 @@ def _render_iterative_md(df: pd.DataFrame, schedule: str = "uniform") -> str:
 
 
 def _render_canary_md(canary: dict[str, Any]) -> str:
-    """Markdown table: canary-detection per method (Thudi et al. Tier-4).
+    """Markdown table: canary membership gap per method (Tier-4).
 
-    canary_detection_acc = logistic-regression accuracy separating
-    canary-tagged from clean-original features of the same identity.
-    Chance (≈0.50) = the unlearned model no longer encodes the canary
-    pattern = erased.  Higher (→1.0) = pattern persists = failed.
+    The canary pattern is PHYSICALLY in the input pixels, so a
+    feature-space detector (canary_detection_acc) ≈ 1.0 whenever the
+    pattern is present — before AND after unlearning.  It measures
+    pattern PRESENCE, not erasure.
+
+    The erasure signal is the OUTPUT-space membership gap:
+        gap = id_conf_canary − id_conf_clean
+    (mean softmax confidence of the canary identity on canary-tagged
+    images vs clean originals of the same identity).
+      - gap ≈ 0  → the model treats canary-tagged and clean originals
+                   identically → the canary identity is fully erased ✓
+      - gap ≫ 0  → canary-tagged images (seen in training) still get
+                   higher identity confidence than clean originals →
+                   membership cue persists ✗
     """
     if not canary:
         return "_No canary verification results available._\n"
 
     lines = [
         "",
-        "| Method | Identity | Images | Det-acc (↓ good, 0.5 = erased) | Feat-sim (↑ good) |",
-        "|--------|----------|--------|-----------------------------------|-------------------|",
+        "| Method | Identity | Images | Conf gap (0 = erased) | Conf canary | Conf clean |",
+        "|--------|----------|--------|------------------------|-------------|------------|",
     ]
     for method, per_id in sorted(canary.items()):
         if not isinstance(per_id, dict) or not per_id:
-            lines.append(f"| {method} | — | — | — | — |")
+            lines.append(f"| {method} | — | — | — | — | — |")
             continue
         for cid, m in sorted(per_id.items(), key=lambda kv: int(kv[0])):
-            det = m.get("canary_detection_acc", float("nan"))
-            det_str = f"{det:.4f}" if isinstance(det, (int, float)) else str(det)
-            sim = m.get("feature_similarity_to_clean", float("nan"))
-            sim_str = f"{sim:.4f}" if isinstance(sim, (int, float)) else str(sim)
+            cc = m.get("id_conf_canary", float("nan"))
+            cn = m.get("id_conf_clean", float("nan"))
+            gap = cc - cn if isinstance(cc, (int, float)) and isinstance(cn, (int, float)) else float("nan")
+            gap_str = f"{gap:.4f}" if isinstance(gap, (int, float)) else str(gap)
+            cc_str = f"{cc:.4f}" if isinstance(cc, (int, float)) else str(cc)
+            cn_str = f"{cn:.4f}" if isinstance(cn, (int, float)) else str(cn)
             lines.append(
                 f"| {method} | {cid} | {m.get('n_images', '—')} | "
-                f"{det_str} | {sim_str} |"
+                f"{gap_str} | {cc_str} | {cn_str} |"
             )
     lines.append("")
-    lines.append("_Det-acc ≈ 0.50 = canary pattern erased (detector at chance); "
-                 "→ 1.0 = pattern persists.  Feat-sim = mean cosine similarity "
-                 "between canary-tagged and clean-original features of the same "
-                 "image (1.0 = no feature-level effect).  Compare against the "
-                 "pre-unlearning model's det-acc (≈1.0, pattern present)._")
+    lines.append("_Membership gap = id_conf(canary-tagged) − id_conf(clean originals) "
+                 "of the same identity.  Gap ≈ 0 = canary identity erased (both image "
+                 "groups treated identically); gap ≫ 0 = the model still uses the "
+                 "canary as a membership cue (pattern persists).  (feature-space "
+                 "det-acc is NOT shown: the pattern is physically in the pixels, so a "
+                 "detector always finds it — it measures presence, not erasure.)_")
     return "\n".join(lines)
 
 
