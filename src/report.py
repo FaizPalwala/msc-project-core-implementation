@@ -104,8 +104,15 @@ def _uf_score(retain_acc: float, mia_mean_auc: float, time_s: float) -> float:
 # ── Loaders ──────────────────────────────────────────────────────────────────
 
 
-def _load_single_shot(results_dir: Path) -> dict[str, Any] | None:
-    path = results_dir / "single_shot" / "single_shot_aggregated.json"
+def _load_single_shot(results_dir: Path, subdir: str = "single_shot") -> dict[str, Any] | None:
+    """Load single-shot aggregated JSON from a subdirectory.
+
+    subdir="single_shot"      → DEFAULT configs (the "configs are
+                                scale-fragile" evidence table).
+    subdir="single_shot_best" → TUNED configs (hparam best-configs —
+                                the headline results).
+    """
+    path = results_dir / subdir / "single_shot_aggregated.json"
     if not path.exists():
         logger.warning(f"[Report] Single-shot aggregated JSON not found: {path}")
         return None
@@ -205,8 +212,16 @@ def _load_ablation(results_dir: Path) -> dict[str, Any] | None:
 # ── Renderers: LaTeX ─────────────────────────────────────────────────────────
 
 
-def _render_single_shot_latex(data: dict) -> str:
-    """LaTeX table: rows = methods, cols = core metrics, μ ± σ + stars."""
+def _render_single_shot_latex(data: dict, table_label: str = "tab:single_shot",
+                              caption_suffix: str = "") -> str:
+    """LaTeX table: rows = methods, cols = core metrics, μ ± σ + stars.
+
+    table_label:    LaTeX \\label (tab:single_shot / tab:single_shot_tuned).
+                    Named table_label (NOT label) because METRIC_SPECS
+                    loop variables reuse the name `label` below.
+    caption_suffix: appended to the caption, e.g. " (tuned configs)" or
+                    " (default configs)" so the two tables are distinct.
+    """
     methods = sorted(data.keys())
     if not methods:
         return ""
@@ -229,13 +244,17 @@ def _render_single_shot_latex(data: dict) -> str:
             continue
         best[key] = min(vals.values()) if lower_better else max(vals.values())
 
+    caption = (
+        "Single-shot unlearning evaluation (mean $\\pm$ std across seeds, "
+        "bootstrap $p$ vs. retrain oracle: $* p<0.05$, $** p<0.01$, "
+        "$*** p<0.001$)"
+    ) + caption_suffix
+
     lines = [
         "\\begin{table}[ht]",
         "\\centering",
-        "\\caption{Single-shot unlearning evaluation (mean $\\pm$ std across "
-        f"{'seeds' if any(k.endswith('_std') for m in methods for k in data[m]) else 'seeds'}, "
-        "bootstrap $p$ vs. retrain oracle: $* p<0.05$, $** p<0.01$, $*** p<0.001$)}",
-        "\\label{tab:single_shot}",
+        f"\\caption{{{caption}}}",
+        f"\\label{{{table_label}}}",
         "\\small",
         "\\begin{tabular}{l" + "c" * (len(present) + 1) + "}",
         "\\toprule",
@@ -555,20 +574,34 @@ def generate_report(
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    single_shot = _load_single_shot(results_path)
+    single_shot = _load_single_shot(results_path)              # default configs
+    single_shot_tuned = _load_single_shot(results_path, subdir="single_shot_best")
     canary = _load_canary(results_path)
     ablation = _load_ablation(results_path)
 
     single_shot_data: dict[str, Any] = single_shot or {}
+    tuned_data: dict[str, Any] = single_shot_tuned or {}
 
     tex_parts = []
     md_parts = []
 
-    # Single-shot
-    tex_parts.append(_render_single_shot_latex(single_shot_data))
-    md_parts.append("# Single-Shot Results")
-    md_parts.append(_render_single_shot_md(single_shot_data))
-    _export_single_shot_csv(single_shot_data, out_path / "single_shot_table.csv")
+    # Single-shot — TUNED configs headline first, then default configs as
+    # the "configs are scale-fragile" evidence (MSG retain collapse etc).
+    if tuned_data:
+        tex_parts.append(_render_single_shot_latex(
+            tuned_data, table_label="tab:single_shot_tuned",
+            caption_suffix=" (tuned configs)"))
+        md_parts.append("# Single-Shot Results (tuned configs)")
+        md_parts.append(_render_single_shot_md(tuned_data))
+        _export_single_shot_csv(tuned_data, out_path / "single_shot_tuned_table.csv")
+
+    if single_shot_data:
+        tex_parts.append(_render_single_shot_latex(
+            single_shot_data, table_label="tab:single_shot",
+            caption_suffix=" (default configs)"))
+        md_parts.append("\n# Single-Shot Results (default configs)")
+        md_parts.append(_render_single_shot_md(single_shot_data))
+        _export_single_shot_csv(single_shot_data, out_path / "single_shot_table.csv")
 
     # Iterative — one table per schedule lane (uniform, poisson)
     iterative_by_schedule = _load_iterative_aggregated(results_path)
