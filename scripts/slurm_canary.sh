@@ -114,12 +114,18 @@ for method in ga adaptiforget; do
     MODEL="$UNLEARN_DIR/seed_42/${method}_unlearned.pt"
     if [ -f "$MODEL" ]; then
         echo "  [verify] $method"
+        # Pure JSON to the file (stdout); logs stay on the job stream.
+        # The old `2>&1 | tee` merged logger lines into the JSON and
+        # crashed report.py's json.load (JSONDecodeError, both report
+        # jobs 7102724/7102745).  Filter timestamped log lines BEFORE
+        # tee so the file receives only the JSON payload.
         python src/canary.py verify \
             --csv "$CANARY_CSV" \
             --src_csv "$CSV" \
             --model "$MODEL" \
             --identities "${IDENTITIES[@]}" \
-            2>&1 | tee "$OUT/verify_${method}.json"
+            2>&1 | grep -vE "^[0-9]{4}-[0-9]{2}-[0-9]{2} " \
+            | tee "$OUT/verify_${method}.json"
     else
         echo "  [WARN] $MODEL not found — skipping verify for $method"
     fi

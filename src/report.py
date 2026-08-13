@@ -167,8 +167,20 @@ def _load_canary(results_dir: Path) -> dict[str, Any] | None:
     data: dict[str, Any] = {}
     for path in files:
         method = path.stem[len("verify_"):]
-        with open(path) as f:
-            data[method] = json.load(f)
+        raw = path.read_text()
+        # slurm_canary.sh writes verify JSON through `2>&1 | tee`, so logger
+        # lines (stderr) can precede the JSON payload.  Tolerate that: strip
+        # everything up to the first '{' (the payload is always a dict).
+        # NOTE: do NOT also search for '[' — log lines contain "[INFO]",
+        # "[OK]" and would be picked as the payload start.
+        first = raw.find("{")
+        if first > 0:
+            logger.warning(f"[Report] {path.name}: stripping {first} chars of "
+                           "log output before JSON (2>&1 | tee pollution)")
+            raw = raw[first:]
+        elif first == -1:
+            raise ValueError(f"[Report] {path.name}: no JSON payload found")
+        data[method] = json.loads(raw)
     logger.info(f"[Report] Loaded canary verification: {[p.name for p in files]}")
     return data
 
