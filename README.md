@@ -71,22 +71,27 @@ File format (CSV or Parquet) is auto-detected from the extension.
 ## Pipeline Stages
 
 ```
-train → single_shot → (imbalanced: equity plots) → hparam → iterative → stability ──┐
-  │          │                                                                    │
-  ├──→ ablation (parallel, after train) ─────────────────────────────────────────┤
-  └──→ canary (independent) ────────────────────────────────────────────────────┴──→ report
+train → single_shot (defaults) → hparam → single_shot_best (tuned) → iterative → stability ──┐
+  │                                  │                                                       │
+  ├──→ ablation (after hparam; tuned AdaptiForget) ─────────────────────────────────────────┤
+  ├──→ canary (after hparam; tuned unlearning) ─────────────────────────────────────────────┤
+  └──→ (imbalanced) equity plots (after single_shot_best; tuned) ───────────────────────────┴──→ report
 ```
 
-| Stage | Script | Description | Parallel? |
+Config routing (design intent: **only the original single-shot uses default
+configs — everything downstream runs with the HP-tuned best configs**):
+
+| Stage | Script | Config used | Parallel? |
 |-------|--------|-------------|-----------|
 | Train | `train.py` | Train original model M on retain+forget (train subset) | — |
-| Single-shot | `single_shot.py` | All methods, all forget IDs, complete eval + per-identity/demographic CSVs | After train |
-| Equity plots | `imbalanced_plots.py` | 6 per-bin equity plots + Kruskal-Wallis (imbalanced only) | After single-shot |
+| Single-shot | `single_shot.py` | **DEFAULT configs** (the baseline) | After train |
 | HP search | `hparam_search.py` | Grid/random search, UF-score ranking | Parallel with single-shot |
-| Iterative | `iterative.py` | Schedule protocol (uniform 5×15, or Poisson), cumulative + fresh, re-emergence, `--order_seed` for order-stability | After best configs |
+| Single-shot-best | `single_shot.py --best_configs` | **Tuned** configs (headline results) | After all HP jobs |
+| Equity plots | `imbalanced_plots.py` | 6 per-bin equity plots + Kruskal-Wallis (imbalanced only) | **After single_shot_best (tuned)** |
+| Iterative | `iterative.py` | Schedule protocol (uniform 5×15, or Poisson), cumulative + fresh, re-emergence, `--order_seed` for order-stability | **After best configs** |
 | Stability | `stability.py` | 16 publication-quality plots | After iterative |
-| Ablation | `ablation_study.py` | AdaptiForget component ablation (6 variants, one component disabled each) | Parallel, after train |
-| Canary | `canary.py` | Pixel-level ground-truth deletion proof | Independent |
+| Ablation | `ablation_study.py` | AdaptiForget component ablation (6 variants, one component disabled each) | **After hparam; tuned AdaptiForget base** |
+| Canary | `canary.py` | Pixel-level ground-truth deletion proof | **After hparam; tuned unlearning** |
 | Report | `report.py` | LaTeX/Markdown synthesis of all results | After stability + canary + ablation |
 
 The imbalanced chain skips iterative + stability (no `forget_step` to
@@ -115,12 +120,17 @@ python src/iterative.py --csv ../bench/metadata/dataset.csv \
     --model results/checkpoints/original_model_best.pt \
     --methods ng_plus msg_kd adaptiforget
 
-# Stability plots
-python src/stability.py --combined results/iterative/iterative_combined_aggregated.csv
+# Stability plots (16; per-identity + demographic plots read the TOP-LEVEL
+# single-shot CSVs — run_single_shot_multi_seed aggregates them across seeds)
+python src/stability.py --combined results/iterative/iterative_combined_aggregated.csv \
+    --per_id_csv results/single_shot/single_shot_per_identity.csv \
+    --demog_csv results/single_shot/single_shot_demographic.csv
 
-# AdaptiForget component ablation (6 variants, reuses the trained model)
+# AdaptiForget component ablation (6 variants, reuses the trained model;
+# --best_configs makes the "Full" variant the TUNED method as deployed)
 python src/ablation_study.py --csv ../bench/metadata/dataset.csv \
-    --model results/checkpoints/original_model_best.pt --out results/ablation
+    --model results/checkpoints/original_model_best.pt --out results/ablation \
+    --best_configs results/hparam
 
 # Method feasibility gate (cheap C2/C3 triage before a full run — GO/TUNE/BROKEN)
 python src/feasibility_study.py --src_csv ../bench/metadata/dataset.csv \

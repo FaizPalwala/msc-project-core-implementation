@@ -45,6 +45,7 @@ LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 CSV="${1:-$CSV_DEFAULT}"
 OUT="${2:-$OUT_BASE/ablation}"
+BEST_CONFIGS="${3:-}"   # HP-tuned best-configs dir (hparam/) — passed by the pipeline
 
 # Main train job's checkpoint lives in OUT_BASE/checkpoints (OUT_BASE is
 # results/<dataset>, a sibling of the ablation dir).  NOTE: do NOT build
@@ -62,7 +63,8 @@ python src/ablation_study.py \
     --csv "$CSV" \
     --model "$MODEL" \
     --out "$OUT" \
-    --device auto --seed 42 --scale 1.0 2>&1
+    --device auto --seed 42 --scale 1.0 \
+    ${BEST_CONFIGS:+--best_configs "$BEST_CONFIGS"} 2>&1
 
 echo "[$(date)] Ablation study complete."
 echo "  Results: $OUT/ablation_results.csv"

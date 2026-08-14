@@ -64,32 +64,36 @@ the CSV** at runtime (600-id vs 750-id needs no code change).
 ## Pipeline Stages
 
 ```
-                     ┌─ single_shot (default configs) ─────────┐
-train ───────────────┼─ hparam ×9 methods, ALL parallel ──────┤
-                     ├─ ablation (component study, afterok) ──┤
-                     └─────────────────────────────────────────┘
+                     ┌─ single_shot (DEFAULT configs — the only default user) ┐
+train ───────────────┼─ hparam ×9 methods, ALL parallel ─────────────────────┤
+                     └────────────────────────────────────────────────────────┘
                           │
-                          ├─→ single_shot_best (tuned configs) ──→ report
-                          ├─→ iterative (tuned) → stability ──────┘
-                          └─→ canary (independent) ────────────────┘
+                          ├─→ single_shot_best (tuned) → iterative (tuned) → stability
+                          ├─→ ablation (tuned AdaptiForget, after hparam) ──┤
+                          ├─→ canary (tuned unlearning, after hparam) ──────┤
+                          └──────────────────────────────────────────────────┴─→ report
 
-imbalanced adds (after single_shot):
-  equity plots (per-bin fairness) ─────────────────────────────┐
-  per-bin oracles (Protocol B) ─┐                              │
-  Protocol C selection ─────────┼─→ budget sweep (Protocol C) → report
+imbalanced adds (after single_shot_best):
+  equity plots (per-bin fairness, TUNED) ──────────────────────────┐
+  per-bin oracles (Protocol B) ─┐                                  │
+  Protocol C selection ─────────┼─→ budget sweep (Protocol C) ─────┴─→ report
 ```
+
+**Config routing:** only `single_shot` uses default configs. Everything
+downstream — `single_shot_best`, iterative, stability inputs, equity plots,
+ablation, canary unlearning — uses the HP-tuned best configs.
 
 | Stage | Script | GPU | Description |
 |-------|--------|-----|-------------|
 | Train | `slurm_train.sh` | 1 L40S | Original model on retain+forget (train subset) |
-| Single-shot | `slurm_single_shot.sh` | 1 L40S | All methods, all forget IDs, default configs + per-identity/demographic CSVs |
+| Single-shot | `slurm_single_shot.sh` | 1 L40S | All methods, all forget IDs, **default configs** + per-identity/demographic CSVs |
 | HP search | `slurm_hparam.sh` | 1 L40S ×9 | **One job per method, all parallel**; each writes `{method}_best_config.json` |
-| Single-shot best | `slurm_single_shot.sh <out> <best_dir>` | 1 L40S | Same eval with tuned configs (compare-and-contrast vs default) |
-| Iterative | `slurm_iterative.sh` | 1 L40S | Schedule protocol (uniform 5×15 or Poisson), tuned configs, `--order_seed` |
-| Stability | `slurm_stability.sh` | CPU | 16 publication plots from the aggregated iterative CSV |
-| Equity plots (imbalanced) | `slurm_imbalanced_plots.sh` | CPU | 6 per-bin equity plots + Kruskal-Wallis (after single-shot) |
-| Ablation | `slurm_ablation.sh` | 1 L40S | AdaptiForget component ablation (6 variants); reuses train checkpoint, parallel with the suite |
-| Canary | `slurm_canary.sh` | 1 L40S | Pixel-level ground-truth deletion proof (independent) |
+| Single-shot best | `slurm_single_shot.sh <out> <best_dir>` | 1 L40S | Same eval with **tuned** configs (headline results) |
+| Iterative | `slurm_iterative.sh` | 1 L40S | Schedule protocol (uniform 5×15 or Poisson), **tuned** configs, `--order_seed` |
+| Stability | `slurm_stability.sh` | CPU | 16 publication plots; per-identity + demographic plots read the **top-level aggregated** single-shot CSVs (plots 10/11 were silently skipped before the aggregation fix) |
+| Equity plots (imbalanced) | `slurm_imbalanced_plots.sh` | CPU | 6 per-bin equity plots + Kruskal-Wallis (**after single_shot_best — tuned**; was default-config) |
+| Ablation | `slurm_ablation.sh` | 1 L40S | AdaptiForget component ablation (6 variants); **tuned AdaptiForget base** (after hparam) |
+| Canary | `slurm_canary.sh` | 1 L40S | Pixel-level ground-truth deletion proof (**tuned unlearning**, after hparam) |
 | Report | `slurm_report.sh` | CPU | LaTeX/Markdown synthesis of all results |
 | Per-bin oracles (imbalanced) | `slurm_per_bin_oracle.sh` | 1 L40S | Protocol B: 3 retrains, each excluding only one bin's forgets |
 | Protocol C selection (imbalanced) | `slurm_select_protocol_c.sh` | CPU | 1 best method per category by UF score |
@@ -145,18 +149,21 @@ sbatch scripts/slurm_iterative.sh "$CSV" "$MODEL" \
 sbatch scripts/slurm_iterative.sh "$CSV" "$MODEL" \
     results/balanced/iterative_poisson poisson results/balanced/hparam
 
-# 4. Stability plots (CPU-only after iterative)
+# 4. Stability plots (CPU-only after iterative; per-identity/demographic
+#    CSVs are the TOP-LEVEL aggregated files written by single_shot_best)
 sbatch scripts/slurm_stability.sh \
     results/balanced/iterative/iterative_combined_aggregated.csv \
     results/balanced/iterative/plots \
-    results/balanced/single_shot/single_shot_per_identity.csv \
-    results/balanced/single_shot/single_shot_demographic.csv
+    results/balanced/single_shot_best/single_shot_per_identity.csv \
+    results/balanced/single_shot_best/single_shot_demographic.csv
 
-# 5. Ablation study (parallel — reuses the train checkpoint; runs anytime after train)
-sbatch scripts/slurm_ablation.sh "$CSV" results/balanced/ablation
+# 5. Ablation study (AFTER hparam — the "Full" variant uses the tuned
+#    AdaptiForget config; pass the hparam dir as arg 3)
+sbatch scripts/slurm_ablation.sh "$CSV" results/balanced/ablation results/balanced/hparam
 
-# 6. Canary verification (independent; runs anytime after model exists)
-sbatch scripts/slurm_canary.sh "$CSV" results/balanced/canary
+# 6. Canary verification (AFTER hparam — unlearning uses tuned GA +
+#    AdaptiForget configs; pass the hparam dir as arg 3)
+sbatch scripts/slurm_canary.sh "$CSV" results/balanced/canary results/balanced/hparam
 
 # 7. Report (after stability + single_shot_best + canary + ablation)
 sbatch scripts/slurm_report.sh results/balanced

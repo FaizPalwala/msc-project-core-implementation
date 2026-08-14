@@ -81,26 +81,6 @@ SINGLE_JOB=$(sbatch --parsable \
     "$CSV" "$MODEL" "$OUT/single_shot")
 echo "  Single-shot job: $SINGLE_JOB"
 
-# ── Stage 2a: AdaptiForget ablation (parallel with the suite, like canary;
-#    reuses the train checkpoint, so it just needs afterok:TRAIN_JOB) ─────
-echo "[$(date)] Submitting ablation study (dependency: $TRAIN_JOB)…"
-ABLATION_JOB=$(sbatch --parsable \
-    --dependency=afterok:$TRAIN_JOB \
-    "$PROJECT_DIR/scripts/slurm_ablation.sh" \
-    "$CSV" "$OUT/ablation")
-echo "  Ablation job: $ABLATION_JOB"
-
-# ── Imbalanced equity plots (only when DATASET=imbalanced) ─────────────
-if [ "$DATASET" = "imbalanced" ]; then
-    echo "[$(date)] Submitting imbalanced plots (dependency: $SINGLE_JOB)…"
-    IMBPLOT_JOB=$(sbatch --parsable \
-        --dependency=afterok:$SINGLE_JOB \
-        "$PROJECT_DIR/scripts/slurm_imbalanced_plots.sh" \
-        "$OUT/single_shot/single_shot_aggregated.json" \
-        "$CSV" "$OUT/imbalanced")
-    echo "  Imbalanced plots job: $IMBPLOT_JOB"
-fi
-
 # ── HP search: ONE job per method, ALL in parallel ──────────────────────
 # Each job writes its own {method}_best_config.json (no shared-file races).
 # HP_METHODS overrides the default set (methods with grids defined in
@@ -129,6 +109,31 @@ SINGLE_BEST_JOB=$(sbatch --parsable \
     "$CSV" "$MODEL" "$OUT/single_shot_best" "$BEST_DIR")
 echo "  Single-shot-best job: $SINGLE_BEST_JOB"
 
+# ── Stage 2a: AdaptiForget ablation — uses the HP-tuned best config so it
+#    waits on all HP jobs (the "Full" variant is the method as deployed).
+#    Must come after BEST_DIR/HP_DEPS are defined above.
+echo "[$(date)] Submitting ablation study (dependency: $HP_DEPS)…"
+ABLATION_JOB=$(sbatch --parsable \
+    --dependency=afterok:$HP_DEPS \
+    "$PROJECT_DIR/scripts/slurm_ablation.sh" \
+    "$CSV" "$OUT/ablation" "$BEST_DIR")
+echo "  Ablation job: $ABLATION_JOB"
+
+# ── Imbalanced equity plots (only when DATASET=imbalanced) ─────────────
+# Uses the TUNED single-shot results (best configs) — the equity story is
+# the headline, not the default-config baseline.  Depends on the best
+# single-shot (which itself waits on all HP jobs), so the plots reflect
+# tuned behaviour.  (Must come AFTER SINGLE_BEST_JOB is defined above.)
+if [ "$DATASET" = "imbalanced" ]; then
+    echo "[$(date)] Submitting imbalanced plots (dependency: $SINGLE_BEST_JOB)…"
+    IMBPLOT_JOB=$(sbatch --parsable \
+        --dependency=afterok:$SINGLE_BEST_JOB \
+        "$PROJECT_DIR/scripts/slurm_imbalanced_plots.sh" \
+        "$OUT/single_shot_best/single_shot_aggregated.json" \
+        "$CSV" "$OUT/imbalanced")
+    echo "  Imbalanced plots job: $IMBPLOT_JOB"
+fi
+
 # ── Stage 3: Iterative + stability — one PARALLEL LANE per schedule ─────
 # Balanced only — imbalanced has no forget_step schedule to iterate over
 # (its experimental axis is the popularity gradient, not time).
@@ -154,8 +159,8 @@ if [ "$DATASET" = "balanced" ]; then
             "$PROJECT_DIR/scripts/slurm_stability.sh" \
             "$OUT/$ITER_SUBDIR/iterative_combined_aggregated.csv" \
             "$OUT/$ITER_SUBDIR/plots" \
-            "$OUT/single_shot/single_shot_per_identity.csv" \
-            "$OUT/single_shot/single_shot_demographic.csv")
+            "$OUT/single_shot_best/single_shot_per_identity.csv" \
+            "$OUT/single_shot_best/single_shot_demographic.csv")
         echo "  Stability($SCHEDULE) job: $STAB_JOB"
         STAB_DEPS="$STAB_DEPS:$STAB_JOB"
     done
@@ -195,17 +200,19 @@ else
     echo "  Budget sweep job: $SWEEP_JOB"
 fi
 
-# ── Stage 5: Canary experiment (independent of train — uses its own
-#    canary-tagged dataset and training run) ─────────────────────────────
-echo "[$(date)] Submitting canary experiment (independent)…"
+# ── Stage 5: Canary experiment (independent train — but unlearning uses
+#    the HP-tuned best configs, so it waits on all HP jobs) ──────────────
+echo "[$(date)] Submitting canary experiment (dependency: $HP_DEPS)…"
 CANARY_JOB=$(sbatch --parsable \
+    --dependency=afterok:$HP_DEPS \
     "$PROJECT_DIR/scripts/slurm_canary.sh" \
-    "$CSV" "$OUT/canary")
+    "$CSV" "$OUT/canary" "$BEST_DIR")
 echo "  Canary job: $CANARY_JOB"
 
 # ── Stage 6: Report (after ALL lanes + single_shot_best + canary + ablation)
 REPORT_DEPS="$CANARY_JOB:$SINGLE_BEST_JOB"
 [ -n "${ABLATION_JOB:-}" ] && REPORT_DEPS="$ABLATION_JOB:$REPORT_DEPS"
+[ -n "${IMBPLOT_JOB:-}" ] && REPORT_DEPS="$IMBPLOT_JOB:$REPORT_DEPS"
 [ -n "$STAB_DEPS" ] && REPORT_DEPS="$STAB_DEPS:$REPORT_DEPS"
 [ -n "${ORACLE_JOB:-}" ] && REPORT_DEPS="$ORACLE_JOB:$REPORT_DEPS"
 [ -n "${SELC_JOB:-}" ] && REPORT_DEPS="$SELC_JOB:$REPORT_DEPS"

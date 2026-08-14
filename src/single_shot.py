@@ -355,6 +355,51 @@ def run_single_shot_multi_seed(
         json.dump(aggregated, f, indent=2)
     logger.info(f"\n[OK] Aggregated results (μ ± σ over {n_seeds} seeds) → {agg_path}")
 
+    # ── Aggregate per-identity + demographic CSVs across seeds ───────────
+    # Each seed's run_single_shot writes seed_N/single_shot_per_identity.csv
+    # + single_shot_demographic.csv.  stability.py's plot 10 (per-identity
+    # signatures) and plot 11 (demographic heatmap) read TOP-LEVEL copies —
+    # the pipeline passes $OUT/single_shot/single_shot_per_identity.csv,
+    # which never existed → those two plots silently SKIPPED in every run
+    # (the v1.3 stability dirs have 14/16 plots).  Aggregate the per-seed
+    # files (mean AUC per method×group across seeds) and write top-level
+    # copies so the plots finally render.
+    per_id_agg: dict[tuple, list[float]] = defaultdict(list)
+    demog_agg: dict[tuple, list[float]] = defaultdict(list)
+    for seed_dir in sorted(out_path.glob("seed_*")):
+        p = seed_dir / "single_shot_per_identity.csv"
+        if p.exists():
+            with open(p) as f:
+                for row in csv.DictReader(f):
+                    try:
+                        per_id_agg[(row["method"], row["identity_id"])].append(float(row["mia_auc"]))
+                    except (ValueError, KeyError):
+                        continue
+        d = seed_dir / "single_shot_demographic.csv"
+        if d.exists():
+            with open(d) as f:
+                for row in csv.DictReader(f):
+                    try:
+                        demog_agg[(row["method"], row["demographic_group"])].append(float(row["mia_auc"]))
+                    except (ValueError, KeyError):
+                        continue
+    if per_id_agg:
+        with open(out_path / "single_shot_per_identity.csv", "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["method", "identity_id", "mia_auc"])
+            for (m, cid), vals in sorted(per_id_agg.items()):
+                w.writerow([m, cid, round(sum(vals) / len(vals), 4)])
+        logger.info(f"[OK] Per-identity CSV (aggregated over {n_seeds} seeds) → "
+                    f"{out_path/'single_shot_per_identity.csv'}")
+    if demog_agg:
+        with open(out_path / "single_shot_demographic.csv", "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["method", "demographic_group", "mia_auc"])
+            for (m, g), vals in sorted(demog_agg.items()):
+                w.writerow([m, g, round(sum(vals) / len(vals), 4)])
+        logger.info(f"[OK] Demographic CSV (aggregated over {n_seeds} seeds) → "
+                    f"{out_path/'single_shot_demographic.csv'}")
+
     # ── Print aggregated table ────────────────────────────────────────────
     _print_aggregated_table(aggregated, n_seeds)
 

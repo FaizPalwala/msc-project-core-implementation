@@ -52,16 +52,26 @@ def run_ablation(
     device_str: str = "auto",
     seed: int = 42,
     scale: float = 1.0,
+    best_configs_path: str | None = None,
 ) -> dict[str, dict]:
-    """Run AdaptiForget component ablation."""
+    """Run AdaptiForget component ablation.
+
+    best_configs_path: optional HP-tuned best-configs dir (hparam/) — the
+    "Full AdaptiForget" variant then uses the TUNED config (the method as
+    deployed), so the component contributions are measured from the
+    deployed baseline, not the default one.
+    """
     device = resolve_device(device_str)
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
     original = load_model(model_path, device=str(device))
 
-    # Load base config from methods/adaptiforget.yaml
-    base_cfg = get_method_config("adaptiforget", scale=scale)
+    # Load base config from methods/adaptiforget.yaml, overlaid with the
+    # HP-tuned best config when supplied (--best_configs hparam dir) so the
+    # ablation studies the method AS DEPLOYED, not the default baseline.
+    base_cfg = get_method_config("adaptiforget", scale=scale,
+                                 best_configs_path=best_configs_path)
 
     results: dict[str, dict] = {}
 
@@ -130,6 +140,9 @@ def run_ablation(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                        datefmt="%Y-%m-%d %H:%M:%S")
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv",    type=str, required=True)
     parser.add_argument("--model",  type=str, required=True)
@@ -137,6 +150,10 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--seed",   type=int, default=42)
     parser.add_argument("--scale",  type=float, default=1.0)
+    parser.add_argument("--best_configs", type=str, default=None,
+                        help="HP-tuned best-configs dir (hparam/) — the Full "
+                             "variant then uses the TUNED AdaptiForget config "
+                             "(method as deployed), not the YAML default.")
     args = parser.parse_args()
 
     run_ablation(
@@ -146,4 +163,5 @@ if __name__ == "__main__":
         device_str=args.device,
         seed=args.seed,
         scale=args.scale,
+        best_configs_path=args.best_configs,
     )

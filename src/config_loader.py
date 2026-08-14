@@ -139,9 +139,16 @@ def _scale_value(key: str, value: Any, scale: float) -> Any:
     return value
 
 
-def get_method_config(method: str, scale: float = 1.0) -> dict[str, Any]:
-    """Convenience: load configs and return the one for `method`."""
-    return load_method_configs(scale).get(method, {})
+def get_method_config(method: str, scale: float = 1.0,
+                      best_configs_path: str | Path | None = None) -> dict[str, Any]:
+    """Convenience: load configs and return the one for `method`.
+
+    best_configs_path: optional HP-search best-configs (dir of
+    {method}_best_config.json files or a single merged JSON) — the tuned
+    values override the YAML defaults, so callers like the ablation study
+    evaluate the method AS DEPLOYED (tuned), not the default baseline.
+    """
+    return load_method_configs(scale, best_configs_path).get(method, {})
 
 
 def available_methods() -> list[str]:

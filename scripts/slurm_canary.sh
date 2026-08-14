@@ -49,7 +49,8 @@ LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 CSV="${1:-$CSV_DEFAULT}"
 OUT="${2:-$OUT_BASE/canary}"
-shift 2
+BEST_CONFIGS="${3:-}"   # HP-tuned best-configs dir (hparam/) — passed by the pipeline
+shift 3 || shift $#
 IDENTITIES=("$@")
 if [ ${#IDENTITIES[@]} -eq 0 ]; then
     # Default: first 4 forget identities (forget_step=0 on balanced,
@@ -98,13 +99,17 @@ python src/train.py \
 CANARY_MODEL="$CKPT_DIR/original_model_best.pt"
 
 # ── Stage 3: Unlearn the canary identities (single-shot, GA + AdaptiForget) ─
+# Uses the HP-tuned best configs when available (the pipeline passes the
+# hparam dir) — the canary unlearning should reflect the tuned methods,
+# not the default-config baselines.
 echo "[$(date)] Unlearning canary identities…"
 python src/single_shot.py \
     --csv "$CANARY_CSV" \
     --model "$CANARY_MODEL" \
     --out "$UNLEARN_DIR" \
     --methods ga adaptiforget \
-    --skip_retrain 2>&1
+    --skip_retrain \
+    ${BEST_CONFIGS:+--best_configs "$BEST_CONFIGS"} 2>&1
 
 # ── Stage 4: Verify canary removal on the unlearned models ──────────────
 # single_shot (multi-seed) writes seed_<seed>/<method>_unlearned.pt —
