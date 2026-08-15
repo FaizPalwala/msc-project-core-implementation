@@ -73,6 +73,7 @@ File format (CSV or Parquet) is auto-detected from the extension.
 ```
 train → single_shot (defaults) → hparam → single_shot_best (tuned) → iterative → stability ──┐
   │                                  │                                                       │
+  ├──→ feasibility gate (C2/C3, parallel — ~12-id budget sweep) ─────────────────────────────┤
   ├──→ ablation (after hparam; tuned AdaptiForget) ─────────────────────────────────────────┤
   ├──→ canary (after hparam; tuned unlearning) ─────────────────────────────────────────────┤
   └──→ (imbalanced) equity plots (after single_shot_best; tuned) ───────────────────────────┴──→ report
@@ -87,6 +88,7 @@ configs — everything downstream runs with the HP-tuned best configs**):
 | Single-shot | `single_shot.py` | **DEFAULT configs** (the baseline) | After train |
 | HP search | `hparam_search.py` | Grid/random search, UF-score ranking | Parallel with single-shot |
 | Single-shot-best | `single_shot.py --best_configs` | **Tuned** configs (headline results) | After all HP jobs |
+| Feasibility gate | `feasibility_study.py` | C2/C3 verdict matrix (GO/TUNE/BROKEN) — wired into the pipeline; also runs standalone | Parallel (no train dep) |
 | Equity plots | `imbalanced_plots.py` | 6 per-bin equity plots + Kruskal-Wallis (imbalanced only) | **After single_shot_best (tuned)** |
 | Iterative | `iterative.py` | Schedule protocol (uniform 5×15, or Poisson), cumulative + fresh, re-emergence, `--order_seed` for order-stability | **After best configs** |
 | Stability | `stability.py` | 16 publication-quality plots | After iterative |

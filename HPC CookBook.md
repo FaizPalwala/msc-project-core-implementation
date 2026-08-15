@@ -215,7 +215,9 @@ UNLEARN_NUM_WORKERS=0 PYTHONPATH="" python3 -u src/feasibility_study.py \
     --epochs 3 --step_scale 1.0 --device mps
 ```
 
-On Aire (GPU, full budgets, ~4 h):
+On Aire (GPU, full budgets, ~4 h) — **also wired into the full pipeline**
+(Stage 2c, runs in parallel with single-shot/HP; the report renders the
+verdict matrix):
 
 ```bash
 sbatch scripts/slurm_feasibility.sh balanced

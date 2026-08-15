@@ -209,6 +209,74 @@ def _load_ablation(results_dir: Path) -> dict[str, Any] | None:
     return data
 
 
+def _load_feasibility(results_dir: Path) -> dict[str, Any] | None:
+    """Load the C2/C3 feasibility-gate verdicts.
+
+    slurm_feasibility.sh writes results/feasibility_<dataset>/, a SIBLING
+    of the per-dataset results dir (results/balanced → results/feasibility_balanced).
+    The JSON carries {subsample, rows (per method×multiplier budget sweep),
+    verdicts (method → GO/TUNE/BROKEN), verdict_notes}.  Returns the dict
+    or None when the gate didn't run.
+    """
+    dataset = results_dir.name
+    cands = [
+        results_dir.parent / f"feasibility_{dataset}" / "feasibility_results.json",
+        results_dir.parent / "feasibility" / "feasibility_results.json",
+    ]
+    for path in cands:
+        if path.exists():
+            with open(path) as f:
+                data = json.load(f)
+            logger.info(f"[Report] Loaded feasibility gate: {path} "
+                        f"({len(data.get('verdicts', {}))} verdicts)")
+            return data
+    logger.warning(f"[Report] Feasibility gate results not found (tried "
+                   f"{[str(c) for c in cands]})")
+    return None
+
+
+def _render_feasibility_md(feas: dict[str, Any]) -> str:
+    """Markdown verdict matrix: method × verdict (+ budget response).
+
+    The gate sweeps each method's budget at 1x/3x/10x on a ~12-id
+    subsample.  Verdicts: GO (responds to budget, healthy), TUNE (works
+    but needs attention), BROKEN (structural).  The central C2 finding —
+    fixed step budgets do not transfer across dataset sizes — motivates
+    Budget-Scaled GA; BROKEN verdicts are provisional until confirmed at
+    full scale (the FT scale-artefact worked example).
+    """
+    if not feas:
+        return "_No feasibility-gate results available (gate did not run)._"
+
+    verdicts = feas.get("verdicts", {})
+    rows = feas.get("rows", [])
+    lines = [
+        "",
+        "| Method | Verdict | 1× budget | 3× budget | 10× budget |",
+        "|--------|---------|-----------|-----------|------------|",
+    ]
+    for method in sorted(verdicts):
+        v = verdicts[method]
+        cells = []
+        for mult in (1.0, 3.0, 10.0):
+            mr = next((r for r in rows
+                       if r.get("method") == method and r.get("multiplier") == mult), None)
+            if mr:
+                cells.append(f"{mr.get('forget_id_acc', float('nan')):.3f}/"
+                             f"{mr.get('retain_id_acc', float('nan')):.3f}")
+            else:
+                cells.append("—")
+        lines.append(f"| {method} | {v} | " + " | ".join(cells) + " |")
+    lines.append("")
+    lines.append("_Cells are forget/retain id-acc at each budget multiplier on "
+                 "the ~12-id subsample.  Verdicts: GO = responds to budget; "
+                 "TUNE = works but needs attention; BROKEN = no response even "
+                 "at 10× (provisional — must be confirmed at full scale, e.g. "
+                 "the FT scale-artefact).  The budget-transfer failure is the "
+                 "motivation for Budget-Scaled GA._")
+    return "\n".join(lines)
+
+
 # ── Renderers: LaTeX ─────────────────────────────────────────────────────────
 
 
@@ -578,6 +646,7 @@ def generate_report(
     single_shot_tuned = _load_single_shot(results_path, subdir="single_shot_best")
     canary = _load_canary(results_path)
     ablation = _load_ablation(results_path)
+    feasibility = _load_feasibility(results_path)
 
     single_shot_data: dict[str, Any] = single_shot or {}
     tuned_data: dict[str, Any] = single_shot_tuned or {}
@@ -602,6 +671,11 @@ def generate_report(
         md_parts.append("\n# Single-Shot Results (default configs)")
         md_parts.append(_render_single_shot_md(single_shot_data))
         _export_single_shot_csv(single_shot_data, out_path / "single_shot_table.csv")
+
+    # Feasibility gate (C2/C3 verdict matrix — the methodology component)
+    if feasibility:
+        md_parts.append("\n# Feasibility Gate (C2/C3 pre-flight verdicts)")
+        md_parts.append(_render_feasibility_md(feasibility))
 
     # Iterative — one table per schedule lane (uniform, poisson)
     iterative_by_schedule = _load_iterative_aggregated(results_path)

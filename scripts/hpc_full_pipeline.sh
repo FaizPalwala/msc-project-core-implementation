@@ -98,6 +98,16 @@ for M in $HP_METHODS; do
 done
 HP_DEPS="${HP_DEPS#:}"
 
+# ── Stage 2c: C2/C3 feasibility gate (small-scale pre-flight, parallel) ─
+# Trains its own ~12-id subsampled model and sweeps each method's budget
+# at 1x/3x/10x → verdicts (GO/TUNE/BROKEN).  No dependency on the train
+# job (it subsamples from the dataset CSV directly), so it runs alongside
+# single-shot + HP.  Results → results/feasibility_<dataset>/.
+echo "[$(date)] Submitting feasibility gate…"
+FEAS_JOB=$(sbatch --parsable \
+    "$PROJECT_DIR/scripts/slurm_feasibility.sh" "$DATASET")
+echo "  Feasibility gate job: $FEAS_JOB"
+
 # ── Stage 2b: Single-shot with BEST configs (after all HP jobs) ─────────
 # The user's compare-and-contrast: default-config single-shot (above) vs
 # tuned single-shot.  Both feed the report; iterative uses the tuned set.
@@ -213,6 +223,7 @@ echo "  Canary job: $CANARY_JOB"
 REPORT_DEPS="$CANARY_JOB:$SINGLE_BEST_JOB"
 [ -n "${ABLATION_JOB:-}" ] && REPORT_DEPS="$ABLATION_JOB:$REPORT_DEPS"
 [ -n "${IMBPLOT_JOB:-}" ] && REPORT_DEPS="$IMBPLOT_JOB:$REPORT_DEPS"
+[ -n "${FEAS_JOB:-}" ] && REPORT_DEPS="$FEAS_JOB:$REPORT_DEPS"
 [ -n "$STAB_DEPS" ] && REPORT_DEPS="$STAB_DEPS:$REPORT_DEPS"
 [ -n "${ORACLE_JOB:-}" ] && REPORT_DEPS="$ORACLE_JOB:$REPORT_DEPS"
 [ -n "${SELC_JOB:-}" ] && REPORT_DEPS="$SELC_JOB:$REPORT_DEPS"
