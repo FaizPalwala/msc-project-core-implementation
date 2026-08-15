@@ -110,8 +110,9 @@ popularity gradient IS the axis) and instead runs Protocols B + C.
 # Submit the entire pipeline — Slurm handles dependencies
 DATASET=balanced bash scripts/hpc_full_pipeline.sh
 
-# Poisson schedule instead of uniform (results → results/balanced/iterative_poisson)
-ITER_SCHEDULE=poisson DATASET=balanced bash scripts/hpc_full_pipeline.sh
+# Poisson schedule INSTEAD of uniform (results → results/balanced/iterative_poisson);
+# both lanes run by default — override with SCHEDULES="uniform" or "poisson"
+SCHEDULES=poisson DATASET=balanced bash scripts/hpc_full_pipeline.sh
 
 # HP method set override (default: ng_plus msg ct msg_kd adaptiforget ga srl ft budget_scaled)
 HP_METHODS="ng_plus ft" bash scripts/hpc_full_pipeline.sh
@@ -132,7 +133,7 @@ sbatch scripts/slurm_train.sh "$CSV" results/balanced/checkpoints
 # 2a. Single-shot evaluation (default configs, ~12-24 hr)
 sbatch scripts/slurm_single_shot.sh "$CSV" "$MODEL" results/balanced/single_shot
 
-# 2b. HP search — ONE job per method, all parallel (8 jobs for the default set)
+# 2b. HP search — ONE job per method, all parallel (9 jobs for the default set)
 for M in ng_plus msg ct msg_kd adaptiforget ga srl ft budget_scaled; do
     sbatch scripts/slurm_hparam.sh "$CSV" "$MODEL" results/balanced/hparam "$M" grid
 done
@@ -277,7 +278,10 @@ train ───────────────┤                          
   both; they write to separate dirs (`iterative` vs `iterative_poisson`).
 - **Order-stability seeds are independent jobs** — run 5 seeds in parallel,
   then aggregate μ±σ (see above).
-- **Canary is fully independent** — no dependency on train; runs anytime.
+- **Canary has its own train but waits on HP** — it trains a canary-tagged
+  model independently of the main train, but its UNLEARNING stage uses the
+  tuned GA/AdaptiForget configs, so in the pipeline it runs after the HP
+  jobs (`afterok:HP_DEPS`).
 - **Imbalanced Protocols B + C** — per-bin oracles (3 retrains in one job)
   and Protocol C selection run in parallel after single_shot_best; the
   budget sweep needs both.

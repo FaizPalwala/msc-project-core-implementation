@@ -3,13 +3,13 @@
 
 Dual-head ResNet-18 framework for evaluating machine unlearning methods on synthetic
 facial identity data. Models a realistic GDPR "right to be forgotten" scenario:
-600 synthetic identity clusters, 15 sequential deletion steps, 4 identities per step.
+750 synthetic identity clusters, 15 sequential deletion steps, 5 identities per step.
 
 ---
 
 ## Task
 
-**Primary**: 600-class identity classification (MUFAC-aligned, Choi & Na 2023).
+**Primary**: 750-class identity classification (MUFAC-aligned, Choi & Na 2023).
 **Secondary**: 4-class age-group classification (Handover-aligned, from proxy labels).
 **Unlearning target**: The model must not recognise the deleted person (identity head)
 nor their age group (age head) — a dual test of identity-level and attribute-level
@@ -20,7 +20,7 @@ forgetting.
 ```
 ResNet-18 backbone (ImageNet-pretrained, 224×224)
   → AdaptiveAvgPool2d → 512-d features
-  → fc_identity : 512 → 600   (primary task)
+  → fc_identity : 512 → 750   (primary task)
   → fc_age      : 512 →   4   (secondary task)
 ```
 
