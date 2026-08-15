@@ -336,8 +336,8 @@ def run_search(
             # Write to JSONL incrementally
             with open(out_jsonl, "a") as f:
                 f.write(json.dumps(trial) + "\n")
-            logger.info(f"    UF={trial['uf_score']:.4f} | retain={trial['retain_acc']:.4f} "
-                  f"| MIA_AUC={trial['mia_forget_auc']:.4f} "
+            logger.info(f"    UF={trial['uf_score']:.4f} | retain={trial['retain_id_acc']:.4f} "
+                  f"| MIA_AUC={trial['mia_mean_auc']:.4f} "
                   f"| t={trial['unlearning_time_s']:.1f}s")
         except Exception as e:
             logger.warning(f"  [WARN] Trial {i+1} failed: {e}")

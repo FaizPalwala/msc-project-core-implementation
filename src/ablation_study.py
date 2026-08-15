@@ -122,7 +122,7 @@ def run_ablation(
 
     # Print table
     logger.info(f"\n{'='*80}")
-    logger.info("  ADAPTIFORMET ABLATION STUDY")
+    logger.info("  ADAPTIFORGET ABLATION STUDY")
     logger.info(f"{'='*80}")
     logger.info(f"{'Variant':<26} {'Retain':>7} {'Forget':>7} {'MIA-AUC':>9} {'F-Adv':>7} "
           f"{'Leaked':>7} {'Steps':>6}")

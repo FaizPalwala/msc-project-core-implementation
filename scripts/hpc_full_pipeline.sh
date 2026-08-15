@@ -163,9 +163,9 @@ if [ "$DATASET" = "balanced" ]; then
             "$CSV" "$MODEL" "$OUT/$ITER_SUBDIR" "$SCHEDULE" "$BEST_DIR")
         echo "  Iterative($SCHEDULE) job: $ITER_JOB"
 
-        echo "[$(date)] Submitting stability($SCHEDULE; dependency: $ITER_JOB)…"
+        echo "[$(date)] Submitting stability($SCHEDULE; dependency: $ITER_JOB:$SINGLE_BEST_JOB)…"
         STAB_JOB=$(sbatch --parsable \
-            --dependency=afterok:$ITER_JOB \
+            --dependency=afterok:$ITER_JOB:$SINGLE_BEST_JOB \
             "$PROJECT_DIR/scripts/slurm_stability.sh" \
             "$OUT/$ITER_SUBDIR/iterative_combined_aggregated.csv" \
             "$OUT/$ITER_SUBDIR/plots" \
@@ -219,8 +219,10 @@ CANARY_JOB=$(sbatch --parsable \
     "$CSV" "$OUT/canary" "$BEST_DIR")
 echo "  Canary job: $CANARY_JOB"
 
-# ── Stage 6: Report (after ALL lanes + single_shot_best + canary + ablation)
-REPORT_DEPS="$CANARY_JOB:$SINGLE_BEST_JOB"
+# ── Stage 6: Report (after ALL lanes + single_shot + single_shot_best +
+#    canary + ablation; SINGLE_JOB included so the default-config evidence
+#    table is never dropped — on imbalanced no stage else depends on it)
+REPORT_DEPS="$CANARY_JOB:$SINGLE_BEST_JOB:$SINGLE_JOB"
 [ -n "${ABLATION_JOB:-}" ] && REPORT_DEPS="$ABLATION_JOB:$REPORT_DEPS"
 [ -n "${IMBPLOT_JOB:-}" ] && REPORT_DEPS="$IMBPLOT_JOB:$REPORT_DEPS"
 [ -n "${FEAS_JOB:-}" ] && REPORT_DEPS="$FEAS_JOB:$REPORT_DEPS"

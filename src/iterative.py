@@ -544,11 +544,15 @@ def aggregate_iterative_seeds(out_dir: str) -> dict[str, Any]:
     metric_cols = [c for c in combined.columns
                    if c not in exclude and pd.api.types.is_numeric_dtype(combined[c])]
 
-    # Group by (method, step, mode) — ignore re-emergence rows in aggregation
+    # Group by (method, step, mode) — ignore re-emergence rows in aggregation.
+    # Guard the column: combined.get("type","") returns the SCALAR default
+    # when absent → df[scalar_bool] → KeyError: True (the same bug family
+    # as the stability.py fix — latent here because the pipeline always
+    # passes --re_emergence 5 10 15, which creates the column).
     group_cols = ["method", "step", "mode"]
-    grouped = combined[
-        combined.get("type", "") != "re_emergence"
-    ].groupby(group_cols, dropna=False)
+    if "type" in combined.columns:
+        combined = combined[combined["type"] != "re_emergence"]
+    grouped = combined.groupby(group_cols, dropna=False)
 
     agg_rows = []
     for (method, step, mode), group in grouped:
