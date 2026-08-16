@@ -141,6 +141,12 @@ python src/feasibility_study.py --src_csv ../bench/metadata/dataset.csv \
 
 ## Methods
 
+> **Evaluation reference.** Every metric, threshold, and protocol in this
+> framework is formally specified in
+> [`docs/EVALUATION_PROTOCOL.md`](docs/EVALUATION_PROTOCOL.md) — the
+> pre-registered evaluation protocol (tiers, UF score, feasibility gate,
+> iterative/order-stability/imbalanced protocols, canary Tier-4 semantics).
+
 | Method | Registry key | Type | Reference |
 |--------|-------------|------|-----------|
 | No-Unlearning | `no_unlearning` | Control | — |
