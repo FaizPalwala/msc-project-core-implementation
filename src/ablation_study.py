@@ -72,12 +72,16 @@ def run_ablation(
     # ablation studies the method AS DEPLOYED, not the default baseline.
     base_cfg = get_method_config("adaptiforget", scale=scale,
                                  best_configs_path=best_configs_path)
+    from dataset import infer_identity_classes
+    n_id_classes = infer_identity_classes(csv_path)
 
     results: dict[str, dict] = {}
 
     logger.info(f"\n  Running {len(ABLATIONS)} ablation variants…")
     for name, overrides in ABLATIONS.items():
-        cfg = prepare_method_call({**base_cfg, **overrides})  # pins subset="train"
+        # pins subset="train" (never see holdout) + CSV-inferred classes
+        cfg = prepare_method_call({**base_cfg, **overrides},
+                                  identity_classes=n_id_classes)
         logger.info(f"\n  ── {name}")
         res = adaptiforget(original, csv_path, device, seed=seed, **cfg)
         validate_unlearning_result(res, "adaptiforget")

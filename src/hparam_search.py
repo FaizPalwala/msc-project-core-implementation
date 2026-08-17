@@ -229,6 +229,7 @@ def run_trial(
     """Run one hyperparameter trial and return evaluation results."""
     from sota_methods import SOTA_REGISTRY
     from novel_variant import NOVEL_REGISTRY
+    from dataset import infer_identity_classes
     try:
         from baselines import BASELINE_REGISTRY
         METHOD_REGISTRY = {**BASELINE_REGISTRY, **SOTA_REGISTRY, **NOVEL_REGISTRY}
@@ -241,11 +242,16 @@ def run_trial(
     logger.info(f"\n  Trial {trial_idx:>3} | {method_name} | {cfg}")
     t0 = time.time()
 
+    n_id_classes = infer_identity_classes(csv_path)
     result = METHOD_REGISTRY[method_name](
         model=original_model,
         csv_path=csv_path,
         device=device,
-        **prepare_method_call(cfg),   # pins subset="train" (never see holdout)
+        # pins subset="train" (never see holdout) + the CSV-inferred class
+        # count — SRL/budget_scaled default to the FULL 750-class head and
+        # would relabel into the wrong space otherwise (same bug family as
+        # the feasibility CUDA-assert; silent at full scale).
+        **prepare_method_call(cfg, identity_classes=n_id_classes),
     )
     validate_unlearning_result(result, method_name)
     unlearned = result["model"]

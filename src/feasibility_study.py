@@ -101,12 +101,21 @@ def subsample_csv(src_csv: str, out_csv: str, n_retain: int, n_forget: int,
 
 def run_method(method: str, model, csv_path: str, device,
                cfg: dict, multiplier: float) -> dict:
-    """Run one method at a given budget multiplier via the real registry."""
+    """Run one method at a given budget multiplier via the real registry.
+
+    identity_classes is inferred from the (subsampled) CSV and injected via
+    prepare_method_call — the subsample remaps identity_id to 0..N-1, so
+    methods that default to the FULL 750-class head (e.g. SRL's
+    _RelabelledDataset(num_classes=600)) would relabel out of range →
+    CUDA device-side assert → poisons the context for every later method.
+    Mirrors single_shot.py which passes the CSV-inferred class count.
+    """
     from config_loader import load_method_configs
     from baselines import BASELINE_REGISTRY
     from sota_methods import SOTA_REGISTRY
     from novel_variant import NOVEL_REGISTRY
     from interfaces import prepare_method_call, validate_unlearning_result
+    from dataset import infer_identity_classes
 
     registry = None
     for r in (BASELINE_REGISTRY, SOTA_REGISTRY, NOVEL_REGISTRY):
@@ -115,6 +124,8 @@ def run_method(method: str, model, csv_path: str, device,
             break
     if registry is None:
         return {"error": f"unknown method {method}"}
+
+    n_id_classes = infer_identity_classes(csv_path)
 
     merged = dict(cfg)
     key = BUDGET_KEYS.get(method)
@@ -129,7 +140,7 @@ def run_method(method: str, model, csv_path: str, device,
     try:
         result = registry[method](
             model=model, csv_path=csv_path, device=torch.device(device),
-            **prepare_method_call(merged),
+            **prepare_method_call(merged, identity_classes=n_id_classes),
         )
         validate_unlearning_result(result, method)
         unlearned = result["model"]
