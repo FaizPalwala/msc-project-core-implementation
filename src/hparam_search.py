@@ -387,6 +387,9 @@ def run_search(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                        datefmt="%Y-%m-%d %H:%M:%S")
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv",        type=str, required=True)
     parser.add_argument("--model",      type=str, required=True)
