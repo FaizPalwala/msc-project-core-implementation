@@ -54,6 +54,22 @@ logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Erasure gate (option-1 guard, 2026-08)
+# ──────────────────────────────────────────────────────────────────────────────
+# The final run exposed a false optimum: a config with tiny lr_ascent
+# collapsed confidence on forget images → MIA AUC ~0.026 (UF's forget term
+# read it as "erased") while forget acc stayed 0.82 and probe-identity
+# stayed 1.0 — output suppression, not erasure.  Any config that does not
+# actually erase is rejected regardless of UF score:
+#   forget_id_acc > ERASURE_FORGET_ACC_MAX  → rejected
+#   probe-identity-on-forget > ERASURE_PROBE_ACC_MAX → rejected
+# Thresholds align with the pre-registered targets in the Evaluation
+# Protocol (forget acc ≤ 0.15; probe-forget ≤ 0.30).
+ERASURE_FORGET_ACC_MAX = 0.15
+ERASURE_PROBE_ACC_MAX = 0.30
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Default search grids / ranges for each method
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -267,6 +283,18 @@ def run_trial(
     f_adv = abs(mia_auc - 0.5)   # reported for diagnostics; NOT used in UF
     score = uf_score(retain_acc, mia_auc, elapsed)
 
+    # Identity probe on the FORGET split — the erasure-gate signal.  The
+    # final run's false optimum suppressed confidence (MIA AUC ~0.026)
+    # while probe-identity stayed 1.0: features still fully encode the
+    # identity.  Probe accuracy > 0.30 ⇒ features intact ⇒ not erased.
+    probe_forget = None
+    try:
+        from probes import probe_identity
+        _pf = probe_identity(unlearned, csv_path, device, split="forget")
+        probe_forget = (_pf or {}).get("accuracy")
+    except Exception:
+        probe_forget = None
+
     return {
         "trial": trial_idx,
         "method": method_name,
@@ -280,6 +308,8 @@ def run_trial(
         "fraction_leaked":    per_id.get("fraction_leaked", 0.0),
         "unlearning_time_s":  round(elapsed, 2),
         "uf_score":           round(score, 4),
+        "probe_identity_forget_acc": (round(float(probe_forget), 4)
+                                      if probe_forget is not None else None),
     }
 
 
@@ -334,10 +364,37 @@ def run_search(
     logger.info(f"[HPSearch] {len(configs)} trials to run")
 
     all_results = []
+    n_gated = 0
     for i, cfg in enumerate(configs):
         try:
             trial = run_trial(method_name, cfg, original_model,
                               csv_path, device, trial_idx=i+1)
+            # ── Erasure gate (option-1 guard, commit 2026-08) ──────────────
+            # The final run exposed a false optimum: a config with tiny
+            # lr_ascent collapsed confidence on forget images → MIA AUC
+            # dropped to ~0.026 (UF's forget term read it as "erased")
+            # while forget acc stayed 0.82 and probe-identity stayed 1.0 —
+            # output suppression, not erasure.  Reject any config that
+            # does not actually erase: forget_id_acc > 0.15 OR the
+            # identity probe still reading the forget split at > 0.30.
+            # Gated trials are still written to the JSONL (audit trail)
+            # but excluded from ranking/best-config export; if NO trial
+            # passes, no best config is exported and the downstream
+            # stages fall back to the YAML default (which, for
+            # AdaptiForget, erases correctly: forget acc 0.0124).
+            probe_f = trial.get("probe_identity_forget_acc")
+            if trial.get("forget_id_acc", 1.0) > ERASURE_FORGET_ACC_MAX \
+                    or (probe_f is not None and probe_f > ERASURE_PROBE_ACC_MAX):
+                n_gated += 1
+                trial["erasure_gate"] = "REJECTED"
+                with open(out_jsonl, "a") as f:
+                    f.write(json.dumps(trial) + "\n")
+                logger.warning(
+                    f"  [GATE] Trial {i+1} REJECTED: forget_acc={trial.get('forget_id_acc'):.4f} "
+                    f"probe_id={probe_f} (max {ERASURE_FORGET_ACC_MAX}/{ERASURE_PROBE_ACC_MAX}) "
+                    f"— suppression, not erasure")
+                continue
+            trial["erasure_gate"] = "PASS"
             all_results.append(trial)
             # Write to JSONL incrementally
             with open(out_jsonl, "a") as f:
@@ -348,6 +405,9 @@ def run_search(
         except Exception as e:
             logger.warning(f"  [WARN] Trial {i+1} failed: {e}")
             continue
+    if n_gated:
+        logger.warning(f"[HPSearch] {n_gated}/{len(configs)} trials REJECTED by the erasure "
+                       f"gate (forget_acc>{ERASURE_FORGET_ACC_MAX} or probe_id>{ERASURE_PROBE_ACC_MAX})")
 
     # Save summary CSV
     if all_results:
@@ -382,6 +442,21 @@ def run_search(
         with open(best_json, "w") as fh:
             json.dump(sorted_results[0]["config"], fh, indent=2)
         logger.info(f"  Best config exported → {best_json}")
+
+    else:
+        # ── No trial passed the erasure gate: fall back to YAML default ─
+        # Every config either failed or was gated as suppression.  Delete
+        # any STALE best-config from a previous run so config_loader's
+        # glob cannot resurrect a rejected config downstream — the method
+        # then runs at its YAML default (documented, auditable fallback).
+        stale = out_path / f"{method_name}_best_config.json"
+        if stale.exists():
+            stale.unlink()
+            logger.warning(f"[HPSearch] {method_name}: NO config passed the erasure gate — "
+                           f"removed stale {stale.name}; downstream runs at YAML default")
+        else:
+            logger.warning(f"[HPSearch] {method_name}: NO config passed the erasure gate — "
+                           f"no best config written; downstream runs at YAML default")
 
     return all_results
 
