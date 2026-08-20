@@ -57,6 +57,9 @@ METRIC_SPECS: list[tuple[str, str, bool, str]] = [
 
 UF_WEIGHTS = {"w_retain": 0.5, "w_forget": 0.4, "w_time": 0.1}
 TIME_BUDGET_S = 300.0
+# Erasure-conditioned forget term (v2 UF, 2026-08): MIA credit only when
+# forget acc ≤ 0.15 (pre-registered target).  Mirrors hparam_search.
+ERASURE_FORGET_ACC_MAX = 0.15
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -86,13 +89,20 @@ def _fmt_musigma(mu: Any, sigma: Any, fmt: str = ".4f") -> str:
     return m
 
 
-def _uf_score(retain_acc: float, mia_mean_auc: float, time_s: float) -> float:
+def _uf_score(retain_acc: float, mia_mean_auc: float, time_s: float,
+              forget_id_acc: float | None = None) -> float:
     """Composite Utility-Forgetting score ∈ [0, 1] (see hparam_search.uf_score).
 
     forget term rewards AUC below 0.5 (erasure signal; oracle ≈ 0.0) and
-    zeroes at/above 0.5 (no-signal control / leak).
+    zeroes at/above 0.5 (no-signal control / leak).  v2: when
+    forget_id_acc is provided the forget term earns credit ONLY if the
+    config actually erases (forget acc ≤ 0.15, the pre-registered
+    target) — a confidence-suppression config (forget acc ~0.82, MIA
+    AUC ~0.026) is NOT rewarded.
     """
     forget_score = max(0.0, 1.0 - 2.0 * mia_mean_auc)
+    if forget_id_acc is not None and forget_id_acc > ERASURE_FORGET_ACC_MAX:
+        forget_score = 0.0
     time_score = min(1.0, time_s / TIME_BUDGET_S)
     return (
         UF_WEIGHTS["w_retain"] * retain_acc
@@ -353,10 +363,12 @@ def _render_single_shot_latex(data: dict, table_label: str = "tab:single_shot",
             cells.append(cell)
 
         # UF score
-        r_acc, mia, t = (row.get("retain_id_acc"), row.get("mia_mean_auc"),
-                         row.get("total_time_s"))
+        r_acc, mia, t, f_acc = (row.get("retain_id_acc"), row.get("mia_mean_auc"),
+                                row.get("total_time_s"), row.get("forget_id_acc"))
         if all(v is not None for v in (r_acc, mia, t)):
-            cells.append(f"{_uf_score(float(r_acc), float(mia), float(t)):.4f}")
+            uf_val = _uf_score(float(r_acc), float(mia), float(t),
+                               float(f_acc) if f_acc is not None else None)
+            cells.append(f"{uf_val:.4f}")
         else:
             cells.append("—")
 
@@ -469,10 +481,14 @@ def _render_single_shot_md(data: dict) -> str:
             if key == "mia_mean_auc" and p_key in row:
                 cell = f"{cell} {_sig_stars(float(row[p_key]))}"
             cells.append(cell)
-        r_acc, mia, t = (row.get("retain_id_acc"), row.get("mia_mean_auc"),
-                         row.get("total_time_s"))
-        uf = f"{_uf_score(float(r_acc), float(mia), float(t)):.4f}" if all(
-            v is not None for v in (r_acc, mia, t)) else "—"
+        r_acc, mia, t, f_acc = (row.get("retain_id_acc"), row.get("mia_mean_auc"),
+                                row.get("total_time_s"), row.get("forget_id_acc"))
+        if all(v is not None for v in (r_acc, mia, t)):
+            uf_val = _uf_score(float(r_acc), float(mia), float(t),
+                               float(f_acc) if f_acc is not None else None)
+            uf = f"{uf_val:.4f}"
+        else:
+            uf = "—"
         lines.append(f"| {row.get('method', m)} | " + " | ".join(cells) + f" | {uf} |")
     lines.append("")
     lines.append("_Bold = best (excluding retrain oracle). Stars: * p<0.05, ** p<0.01, *** p<0.001 (bootstrap vs oracle). Retrain oracle itself is excluded from the best-value competition._")
@@ -620,8 +636,11 @@ def _export_single_shot_csv(data: dict, out_path: Path) -> None:
             if p_key in row:
                 flat[p_key] = row[p_key]
         r_acc, mia, t = row.get("retain_id_acc"), row.get("mia_mean_auc"), row.get("total_time_s")
+        f_acc = row.get("forget_id_acc")
         if all(v is not None for v in (r_acc, mia, t)):
-            flat["uf_score"] = round(_uf_score(float(r_acc), float(mia), float(t)), 4)
+            flat["uf_score"] = round(
+                _uf_score(float(r_acc), float(mia), float(t),
+                          float(f_acc) if f_acc is not None else None), 4)
         rows.append(flat)
     with open(out_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))

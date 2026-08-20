@@ -177,6 +177,7 @@ def uf_score(
     retain_acc: float,
     mia_auc: float,        # SIGNED MIA AUC — 0.0 = erased, 0.5 = no signal, 1.0 = leak
     time_s: float,
+    forget_id_acc: float | None = None,   # v2: erasure-conditioned term
     w_retain: float = 0.5,
     w_forget: float = 0.4,
     w_time: float = 0.1,
@@ -191,12 +192,27 @@ def uf_score(
                     happened) at AUC ≈ 0.50, so the forget term rewards
                     AUC BELOW 0.5 and zeroes at/above 0.5 (leak).
       time_s      : lower → faster
+      forget_id_acc (v2): the ERASURE-CONDITIONED bracket.  The final
+                    run exposed a false optimum: a config with tiny
+                    lr_ascent collapsed confidence on forget images →
+                    MIA AUC ~0.026 while forget acc stayed 0.82 and
+                    probe-identity 1.0 — output suppression, not
+                    erasure.  The MIA term alone cannot tell
+                    "confidence collapse" from "identity erased", so
+                    when forget_id_acc is provided the forget term earns
+                    credit ONLY if the config actually erases
+                    (forget_id_acc ≤ ERASURE_FORGET_ACC_MAX, matching
+                    the pre-registered target).  Suppressors get a
+                    forget term of exactly 0 and can never out-rank a
+                    genuine eraser.
 
     UF = w_r * retain_acc
-       + w_f * max(0, 1 − 2·mia_auc)   # AUC 0 → 1.0; AUC ≥ 0.5 → 0.0
+       + w_f * max(0, 1 − 2·mia_auc) * [forget_id_acc ≤ 0.15]   # v2
        − w_t * min(time_s / time_budget_s, 1)
     """
     forget_score = max(0.0, 1.0 - 2.0 * mia_auc)
+    if forget_id_acc is not None and forget_id_acc > ERASURE_FORGET_ACC_MAX:
+        forget_score = 0.0
     time_score   = min(1.0, time_s / time_budget_s)
     return (w_retain * retain_acc
             + w_forget * forget_score
@@ -279,9 +295,13 @@ def run_trial(
                                   subset="holdout")
 
     retain_acc = eval_res.get("retain", {}).get("identity", {}).get("accuracy", 0.0)
+    forget_id_acc = eval_res.get("forget", {}).get("identity", {}).get("accuracy", 0.0)
     mia_auc = per_id.get("mean_auc", 0.5)
     f_adv = abs(mia_auc - 0.5)   # reported for diagnostics; NOT used in UF
-    score = uf_score(retain_acc, mia_auc, elapsed)
+    # v2: erasure-conditioned forget term — the MIA term earns credit only
+    # when the config actually erases (forget acc ≤ 0.15).  A suppressor
+    # (confidence collapse, forget acc ~0.82) gets forget credit 0.
+    score = uf_score(retain_acc, mia_auc, elapsed, forget_id_acc=forget_id_acc)
 
     # Identity probe on the FORGET split — the erasure-gate signal.  The
     # final run's false optimum suppressed confidence (MIA AUC ~0.026)

@@ -1,16 +1,22 @@
 #!/bin/bash
 # ============================================================================
-# PARTIAL RE-RUN — erasure-gate correction (after commit f8ed8c4)
+# PARTIAL RE-RUN — erasure-gate + composite-v2-UF correction (after f8ed8c4)
 # ============================================================================
 # Why: the final run's hparam exported suppression configs as 'best'
 # (AdaptiForget forget 0.82 with MIA 0.026 — confidence collapse, not
-# erasure).  The erasure gate now rejects forget_acc>0.15 / probe>0.30.
+# erasure).  Two complementary fixes (both committed):
+#   a) erasure gate: trials with forget_acc>0.15 OR probe>0.30 are REJECTED
+#      (excluded from ranking/export; stale best-config deleted on no-pass)
+#   b) composite v2 UF: the MIA forget term earns credit only when
+#      forget_acc <= 0.15 (score-level suppression-proofing, report-consistent)
+# Both thresholds = pre-registered targets (EVALUATION_PROTOCOL.md 5.1/6.1).
 #
 # Re-run scope (verified against final-run trial JSONLs):
 #   RE-TUNE (5 methods, both datasets): adaptiforget budget_scaled ga msg ng_plus
 #     - ng_plus has 0/108 passing trials → gate falls back to YAML default
 #       (it genuinely cannot erase at 750-id; honest outcome)
-#   KEEP configs (4): ct ft srl msg_kd  (their best configs already pass)
+#   KEEP configs (4): ct ft srl msg_kd  (their best configs already pass;
+#       v2 bracket = 1 for them, so UF and selection are unchanged)
 #   RE-USE as-is: train checkpoints, default single_shot, feasibility gates
 #     (they run on YAML defaults — unaffected by the gate)
 #

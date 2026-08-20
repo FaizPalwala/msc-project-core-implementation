@@ -196,11 +196,11 @@ shared attributes on forget identities is not identity-specific enough.
 ### 5.1 The UF score (ranking metric)
 
 Because no single metric summarises the utility-forgetting-time trade-off, the
-framework ranks methods with a composite score, `uf_score` (src/hparam_search.py:160):
+framework ranks methods with a composite score, `uf_score` (src/hparam_search.py:176):
 
 ```
 UF = w_r · retain_acc
-   + w_f · max(0, 1 − 2·mia_auc)      # AUC 0 → 1.0; AUC ≥ 0.5 → 0.0
+   + w_f · max(0, 1 − 2·mia_auc) · [forget_acc ≤ 0.15]   # v2, 2026-08
    − w_t · min(time_s / 300, 1)
 ```
 
@@ -215,6 +215,18 @@ rather than penalising it. The weights favour utility and forgetting equally
 (0.5/0.4) and treat time as a tie-breaker (0.1) — deliberate, because the
 methods are primarily compared on *what they forget and keep*, with compute as
 a secondary axis (retrain oracle is the cost baseline).
+
+**v2 erasure-conditioned bracket (2026-08, post-v1.3).** The final run exposed
+a false optimum: a config with tiny ascent LR collapsed confidence on forget
+images → MIA AUC ≈ 0.026 while forget acc stayed ≈ 0.82 and probe-identity
+1.0 — *output suppression, not erasure*. The MIA term alone cannot distinguish
+"confidence collapse" from "identity erased", so since the correction the
+forget term earns credit **only when the config actually erases**
+(`forget_acc ≤ 0.15`, matching the pre-registered forget-acc target [P]).
+Suppressors earn forget credit exactly 0 and cannot out-rank a genuine eraser.
+`src/report.py` `_uf_score` applies the same bracket, so the tuned-table UF
+column is consistent with the search that selected the configs. (The hard
+rejection layer is Section 6.1.)
 
 ### 5.2 Default vs tuned comparison
 
@@ -255,6 +267,35 @@ method-specific knobs:
 searched explicitly rather than assumed. Each method's grid is recorded in
 `GRIDS` and the per-trial JSONL is append-only (never re-read by the pipeline,
 by design — a poisoned or partial JSONL cannot corrupt later stages).
+
+### 6.1 Erasure gate (hard rejection layer, 2026-08)
+
+**Purpose.** Prevent the search from exporting *suppression* configs as
+"best". The final run's AdaptiForget tuned config (lr_ascent 1e-5, 10× below
+default) collapsed confidence on forget images → MIA AUC ≈ 0.026 (UF read it
+as erased) while forget acc stayed ≈ 0.82 and probe-identity 1.0 — the model
+was *unsure*, not *unlearned*. The v2 UF bracket (5.1) fixes the score; the
+gate is the complementary hard layer:
+
+- `ERASURE_FORGET_ACC_MAX = 0.15`, `ERASURE_PROBE_ACC_MAX = 0.30` [P] —
+  aligned with the pre-registered forget-acc target and the probe semantics
+  (features still reading the forget split ⇒ not erased).
+- Each trial's `forget_id_acc` (and identity-probe accuracy on the forget
+  split, `probe_identity_forget_acc`) is checked after evaluation. Trials
+  with `forget_acc > 0.15` or `probe > 0.30` are **REJECTED**: they remain in
+  the append-only JSONL (audit trail, tagged `"erasure_gate": "REJECTED"`)
+  but are excluded from ranking and best-config export.
+- If **no** trial passes, any stale `{method}_best_config.json` from an
+  earlier run is deleted and the method runs at its YAML default downstream
+  (logged loudly; a rejected config can never be resurrected by
+  `config_loader`'s glob). This is the documented fallback for methods that
+  cannot erase at full scale (e.g. ng_plus at 750 identities).
+
+**Why gate + v2 bracket.** The bracket makes the *score* suppression-proof;
+the gate makes the *selection* suppression-proof (a suppressor can never be
+exported even if retain/time dominate its UF). Both thresholds are
+pre-registered targets, so the guard is a protocol control, not a
+post-hoc patch.
 
 ---
 
