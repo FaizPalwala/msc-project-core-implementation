@@ -58,15 +58,20 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────────────────────
 # The final run exposed a false optimum: a config with tiny lr_ascent
 # collapsed confidence on forget images → MIA AUC ~0.026 (UF's forget term
-# read it as "erased") while forget acc stayed 0.82 and probe-identity
-# stayed 1.0 — output suppression, not erasure.  Any config that does not
-# actually erase is rejected regardless of UF score:
+# read it as "erased") while forget acc stayed 0.82 — output suppression,
+# not erasure.  Any config that does not actually erase is rejected
+# regardless of UF score:
 #   forget_id_acc > ERASURE_FORGET_ACC_MAX  → rejected
-#   probe-identity-on-forget > ERASURE_PROBE_ACC_MAX → rejected
-# Thresholds align with the pre-registered targets in the Evaluation
-# Protocol (forget acc ≤ 0.15; probe-forget ≤ 0.30).
+# Threshold aligns with the pre-registered target in the Evaluation
+# Protocol (forget acc ≤ 0.15).
+# NOTE (2026-08-20, f2): ERASURE_PROBE_ACC_MAX is RETIRED from the gate —
+# probe-identity-on-forget saturates at ~1.0 for every method INCLUDING
+# the retrain oracle at full scale (it measures backbone feature
+# separability, which survives head-level unlearning).  A probe arm
+# rejected 100% of trials and reverted everything to defaults.  Probe
+# remains a diagnostic in the trial dict; forget acc is the gate signal.
 ERASURE_FORGET_ACC_MAX = 0.15
-ERASURE_PROBE_ACC_MAX = 0.30
+ERASURE_PROBE_ACC_MAX = 0.30  # diagnostic reference only — NOT used by the gate
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -393,26 +398,33 @@ def run_search(
             # The final run exposed a false optimum: a config with tiny
             # lr_ascent collapsed confidence on forget images → MIA AUC
             # dropped to ~0.026 (UF's forget term read it as "erased")
-            # while forget acc stayed 0.82 and probe-identity stayed 1.0 —
-            # output suppression, not erasure.  Reject any config that
-            # does not actually erase: forget_id_acc > 0.15 OR the
-            # identity probe still reading the forget split at > 0.30.
+            # while forget acc stayed 0.82 — output suppression, not
+            # erasure.  Reject any config that does not actually erase:
+            # forget_id_acc > 0.15 (ERASURE_FORGET_ACC_MAX, the
+            # pre-registered target).
+            # NOTE (2026-08-20, f2): the probe arm was REMOVED.  At full
+            # scale probe_identity_forget_acc is saturated at ~1.0 for
+            # EVERYTHING — the retrain oracle (forget 0.0) also reads
+            # probe 1.0, because the probe measures backbone feature
+            # separability, which survives head-level unlearning.  A
+            # probe threshold of 0.30 rejected 100% of trials (even
+            # genuine erasers) and silently reverted every method to
+            # YAML defaults.  Probe stays in the trial dict as a
+            # DIAGNOSTIC only; forget acc is the gate signal.
             # Gated trials are still written to the JSONL (audit trail)
             # but excluded from ranking/best-config export; if NO trial
             # passes, no best config is exported and the downstream
             # stages fall back to the YAML default (which, for
             # AdaptiForget, erases correctly: forget acc 0.0124).
             probe_f = trial.get("probe_identity_forget_acc")
-            if trial.get("forget_id_acc", 1.0) > ERASURE_FORGET_ACC_MAX \
-                    or (probe_f is not None and probe_f > ERASURE_PROBE_ACC_MAX):
+            if trial.get("forget_id_acc", 1.0) > ERASURE_FORGET_ACC_MAX:
                 n_gated += 1
                 trial["erasure_gate"] = "REJECTED"
                 with open(out_jsonl, "a") as f:
                     f.write(json.dumps(trial) + "\n")
                 logger.warning(
                     f"  [GATE] Trial {i+1} REJECTED: forget_acc={trial.get('forget_id_acc'):.4f} "
-                    f"probe_id={probe_f} (max {ERASURE_FORGET_ACC_MAX}/{ERASURE_PROBE_ACC_MAX}) "
-                    f"— suppression, not erasure")
+                    f"(max {ERASURE_FORGET_ACC_MAX}) — suppression, not erasure")
                 continue
             trial["erasure_gate"] = "PASS"
             all_results.append(trial)
@@ -427,7 +439,7 @@ def run_search(
             continue
     if n_gated:
         logger.warning(f"[HPSearch] {n_gated}/{len(configs)} trials REJECTED by the erasure "
-                       f"gate (forget_acc>{ERASURE_FORGET_ACC_MAX} or probe_id>{ERASURE_PROBE_ACC_MAX})")
+                       f"gate (forget_acc>{ERASURE_FORGET_ACC_MAX})")
 
     # Save summary CSV
     if all_results:

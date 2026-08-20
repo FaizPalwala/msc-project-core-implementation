@@ -273,29 +273,43 @@ by design — a poisoned or partial JSONL cannot corrupt later stages).
 **Purpose.** Prevent the search from exporting *suppression* configs as
 "best". The final run's AdaptiForget tuned config (lr_ascent 1e-5, 10× below
 default) collapsed confidence on forget images → MIA AUC ≈ 0.026 (UF read it
-as erased) while forget acc stayed ≈ 0.82 and probe-identity 1.0 — the model
-was *unsure*, not *unlearned*. The v2 UF bracket (5.1) fixes the score; the
-gate is the complementary hard layer:
+as erased) while forget acc stayed ≈ 0.82 — the model was *unsure*, not
+*unlearned*. The v2 UF bracket (5.1) fixes the score; the gate is the
+complementary hard layer:
 
-- `ERASURE_FORGET_ACC_MAX = 0.15`, `ERASURE_PROBE_ACC_MAX = 0.30` [P] —
-  aligned with the pre-registered forget-acc target and the probe semantics
-  (features still reading the forget split ⇒ not erased).
-- Each trial's `forget_id_acc` (and identity-probe accuracy on the forget
-  split, `probe_identity_forget_acc`) is checked after evaluation. Trials
-  with `forget_acc > 0.15` or `probe > 0.30` are **REJECTED**: they remain in
-  the append-only JSONL (audit trail, tagged `"erasure_gate": "REJECTED"`)
-  but are excluded from ranking and best-config export.
+- `ERASURE_FORGET_ACC_MAX = 0.15` [P] — aligned with the pre-registered
+  forget-acc target.
+- Each trial's `forget_id_acc` is checked after evaluation. Trials with
+  `forget_acc > 0.15` are **REJECTED**: they remain in the append-only JSONL
+  (audit trail, tagged `"erasure_gate": "REJECTED"`) but are excluded from
+  ranking and best-config export.
 - If **no** trial passes, any stale `{method}_best_config.json` from an
   earlier run is deleted and the method runs at its YAML default downstream
   (logged loudly; a rejected config can never be resurrected by
   `config_loader`'s glob). This is the documented fallback for methods that
   cannot erase at full scale (e.g. ng_plus at 750 identities).
+- **Beat-default rule (2026-08-20):** a passing config is exported only if
+  its v2 UF exceeds the YAML default's v2 UF (computed from the defaults
+  single-shot run). If tuning cannot beat the default, the method runs at
+  its default — the honest outcome when a grid contains only suppression,
+  collapse, or nothing (GA at 750-id: the only erasing config destroys
+  retain, UF −0.0014 vs default 0.4725).
 
 **Why gate + v2 bracket.** The bracket makes the *score* suppression-proof;
 the gate makes the *selection* suppression-proof (a suppressor can never be
 exported even if retain/time dominate its UF). Both thresholds are
 pre-registered targets, so the guard is a protocol control, not a
 post-hoc patch.
+
+**Probe arm — retired (2026-08-20, f2).** An earlier revision of this gate
+also rejected `probe_identity_forget_acc > 0.30`. The identity probe on the
+forget split is **saturated at ≈1.0 for every method at full scale —
+including the retrain oracle** (it measures backbone feature separability,
+which survives head-level unlearning), so the probe arm rejected 100% of
+trials and silently reverted every method to YAML defaults. The probe
+remains a reported Tier-2 diagnostic; it is **not** a gate criterion at
+full scale. Any future probe threshold must be calibrated against the
+oracle, not a pathological case.
 
 ---
 
