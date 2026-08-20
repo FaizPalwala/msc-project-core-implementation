@@ -176,6 +176,13 @@ def verdict(rows: list[dict], method: str) -> str:
     conflated with missing (None).  The old code did `x or 1.0`, which
     mapped 0.0 -> 1.0 (falsy-zero bug): every method that forgot got
     'BROKEN'.  Use explicit None checks.
+
+    v2 (2026-08-20): retain is judged AT THE BUDGET WHERE FORGETTING
+    HAPPENS, not the max across budgets.  The old `max_retain` masked
+    retain damage: budget_scaled (12-id: 1× → 0.300/1.000, 3× →
+    0.000/0.190) scored retain_ok via the healthy 1× row and got GO,
+    despite destroying retain exactly where it erases.  Now: find the
+    best-forgetting row, judge retain THERE.
     """
     def _acc(r: dict, key: str, default: float) -> float:
         v = r.get(key)
@@ -185,12 +192,14 @@ def verdict(rows: list[dict], method: str) -> str:
     if not rs:
         return "ERROR"
     base = rs[0]
-    best_forget = min(_acc(r, "forget_id_acc", 1.0) for r in rs)
-    max_retain = max(_acc(r, "retain_id_acc", 0.0) for r in rs)
+    # The row where forgetting is strongest = the budget we'd actually use
+    best = min(rs, key=lambda r: _acc(r, "forget_id_acc", 1.0))
     base_forget = _acc(base, "forget_id_acc", 1.0)
+    best_forget = _acc(best, "forget_id_acc", 1.0)
+    retain_at_erase = _acc(best, "retain_id_acc", 0.0)
     responded = best_forget < base_forget - 0.05
     forgot = best_forget < 0.2
-    retain_ok = max_retain >= 0.6
+    retain_ok = retain_at_erase >= 0.6
     if forgot and retain_ok:
         return "GO"
     if forgot and not retain_ok:
@@ -212,6 +221,14 @@ def main() -> None:
     ap.add_argument("--n_retain", type=int, default=8)
     ap.add_argument("--n_forget", type=int, default=4)
     ap.add_argument("--imgs_per_id", type=int, default=16)
+    ap.add_argument("--scale", default="12id",
+                    help="scale tag written into results (e.g. 12id, 75id).  "
+                         "Multi-scale feasibility (2026-08): the SAME study at "
+                         "12-id AND 75-id (≈10% of full) exposes head-width "
+                         "mechanisms the 12-id gate cannot see — ng_plus "
+                         "(GO@12, never forgets@750), FT (BROKEN@12, "
+                         "perfect@750).  The 750-id column of the trajectory "
+                         "table comes from the hparam grids.")
     ap.add_argument("--step_scale", type=float, default=1.0,
                     help="shrink the BASE budget (e.g. 0.1 for CPU checks); "
                          "multipliers scale from that base")
@@ -270,7 +287,8 @@ def main() -> None:
 
     # ── 4. Verdicts ───────────────────────────────────────────────────────
     print("\n=== FEASIBILITY VERDICTS ===")
-    results: dict = {"subsample": str(sub_csv), "rows": all_rows, "verdicts": {}}
+    results: dict = {"subsample": str(sub_csv), "scale": args.scale,
+                     "rows": all_rows, "verdicts": {}}
     for method in args.methods:
         v = verdict(all_rows, method)
         results["verdicts"][method] = v

@@ -321,10 +321,33 @@ more budget) or *structural* (no response even at 10×)? Runs as pipeline
 Stage 2c on a ~12-identity subsample, sweeping each method's budget at 1×/3×/10×
 (`src/feasibility_study.py`, `scripts/slurm_feasibility.sh`).
 
-**Verdict semantics.** GO = forgets and retains at some budget; TUNE = responds
-to budget but needs config work; TUNE(retain-collapse) = forgets but destroys
-retain; BROKEN = no response even at 10× (provisional until confirmed at full
-scale).
+**Multi-scale design (2026-08, canonical).** A single gate scale cannot
+separate "this method's mechanism scales" from "this method only works when
+the head is tiny" — the final run proved it in BOTH directions:
+- ng_plus: GO at 12-id (erases at 1×!), **never forgets at 750-id** (0.999
+  across all 108 hparam trials) — a *scale cliff* invisible at 12-id.
+- FT: BROKEN at 12-id (no response even at 10×), **perfect at 750-id**
+  (forget 0.0000) — a *reverse artefact*.
+- budget_scaled: the retain collapse (0.190 at 3×) was already visible at
+  12-id but the old verdict masked it (max-retain over all budgets).
+
+The canonical gate therefore runs the SAME budget sweep at **three scales**:
+**12-id** (cheap fast-fail), **100-id** (≈13% of full, 90 retain + 10 forget,
+keeping the 9:1 ratio — large enough that head-width mechanisms bite), and
+**750-id** (the hparam grid itself — already produced by the full run). The
+report renders a trajectory table (method × 12id/100id verdicts + 750-id
+outcome) that shows *which methods scale and which hit a cliff*.
+
+**Verdict semantics (v2, 2026-08).** GO = forgets ≤ 0.2 with retain ≥ 0.6 **at
+the budget where forgetting happens** (not max-retain across budgets — the
+old logic masked retain damage); TUNE = responds to budget but needs config
+work; TUNE(retain-collapse) = forgets but destroys retain; BROKEN = no
+response even at 10× (provisional until confirmed at full scale).
+
+**Trajectory labels (per method, in the report).** REVERSE-ARTEFACT (works at
+750, broken at gate scale — e.g. FT), SCALE-CLIFF (erases at gate scale but
+fails at 750 — e.g. ng_plus), COLLAPSE-PERSISTS (retain destroyed at scale —
+e.g. GA), or scales OK.
 
 **Central finding.** Fixed step budgets do not transfer across dataset sizes —
 the direct motivation for the Budget-Scaled GA variant (`budget_scaled`), whose
@@ -334,11 +357,12 @@ step budget scales with forget-set size:
 **The worked example of a verdict being overturned.** The gate marked
 fine-tuning (FT) BROKEN at 12 identities (it did not respond to budget there);
 at full 750-identity scale FT forgets perfectly (forget accuracy 0.0000). The
-verdict was a *scale artefact* — BROKEN verdicts are explicitly provisional.
-The gate also caught a real bug: AdaptiForget's first gate pass returned BROKEN
+verdict was a *scale artefact* — BROKEN verdicts are explicitly provisional,
+and the multi-scale gate makes such artefacts visible by construction. The
+gate also caught a real bug: AdaptiForget's first gate pass returned BROKEN
 (pre-fix no-op); the early-stop fix flipped it to GO. The gate is thus both a
-triage tool and a bug-catcher, and its verdicts are recorded per run in
-`feasibility_results.json` and rendered by the report.
+triage tool and a bug-catcher, and its verdicts are recorded per run per scale
+in `feasibility_results.json` and rendered by the report.
 
 **Citation.** Tarun et al. (2023), "Class-Specific Unlearning," *CVPR* (budget
 scaling intuition); Bourtoule et al. (2021), "Machine Unlearning," *IEEE S&P*

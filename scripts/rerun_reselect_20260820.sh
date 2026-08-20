@@ -47,6 +47,19 @@ python3 src/reselect_best_configs.py results/imbalanced/hparam
 echo "  → adaptiforget/msg/budget_scaled best configs restored; ga/ng_plus → default"
 
 echo ""
+echo "── 1b. MULTI-SCALE FEASIBILITY GATE (12id + 100id, both datasets) ──"
+# Canonical gate (2026-08): same budget sweep at 12-id and 100-id, with the
+# 750-id column coming from the hparam grids.  100-id = 90 retain + 10 forget
+# (~13% of full, keeps the 9:1 ratio) — large enough that head-width
+# mechanisms bite (ng_plus scale-cliff, FT reverse-artefact).  Runs in
+# parallel with single_shot_best; feeds the report's trajectory table.
+FEAS_B12=$(sbatch --parsable scripts/slurm_feasibility.sh balanced 12id)
+FEAS_B100=$(sbatch --parsable scripts/slurm_feasibility.sh balanced 100id)
+FEAS_I12=$(sbatch --parsable scripts/slurm_feasibility.sh imbalanced 12id)
+FEAS_I100=$(sbatch --parsable scripts/slurm_feasibility.sh imbalanced 100id)
+echo "  FEAS_B12: $FEAS_B12 | FEAS_B100: $FEAS_B100 | FEAS_I12: $FEAS_I12 | FEAS_I100: $FEAS_I100"
+
+echo ""
 echo "── 2. single_shot_best (both datasets, parallel) ──"
 SSB=$(sbatch --parsable \
     scripts/slurm_single_shot.sh "$CSVB" "$MODELB" \
@@ -109,12 +122,12 @@ SWP=$(sbatch --parsable --dependency=afterok:$ORB:$SEL \
 echo "  IMB: $IMB | ORB: $ORB | SEL: $SEL | SWP: $SWP"
 
 echo ""
-echo "── 6. Reports (both, after ALL their lanes) ──"
+echo "── 6. Reports (both, after ALL their lanes + feasibility) ──"
 REPB=$(sbatch --parsable \
-    --dependency=afterok:$SSB:$ITU:$ITP:$STU:$STP:$CANB:$ABLB \
+    --dependency=afterok:$SSB:$ITU:$ITP:$STU:$STP:$CANB:$ABLB:$FEAS_B12:$FEAS_B100 \
     scripts/slurm_report.sh results/balanced)
 REPI=$(sbatch --parsable \
-    --dependency=afterok:$SSI:$IMB:$ORB:$SEL:$SWP:$CANI:$ABLI \
+    --dependency=afterok:$SSI:$IMB:$ORB:$SEL:$SWP:$CANI:$ABLI:$FEAS_I12:$FEAS_I100 \
     scripts/slurm_report.sh results/imbalanced)
 echo "  REPB: $REPB | REPI: $REPI"
 

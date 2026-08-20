@@ -52,13 +52,27 @@ if [ "$DATASET" = "imbalanced" ]; then
 else
     CSV="$CSV_DEFAULT"
 fi
-OUT="$PROJECT_DIR/results/feasibility_${DATASET}"
+SCALE="${2:-12id}"
+OUT="$PROJECT_DIR/results/feasibility_${DATASET}_${SCALE}"
 shift 2>/dev/null || true
 METHODS=("$@")
 [ ${#METHODS[@]} -eq 0 ] && METHODS=(ga ng_plus adaptiforget msg msg_kd ct ft srl budget_scaled)
 
+# ── Scale → subsample sizes ──────────────────────────────────────────────
+# Multi-scale feasibility (2026-08): the SAME gate at 12-id and 100-id,
+# with the 750-id column coming from the hparam grids.  12-id is the cheap
+# fast-fail filter; 100-id (~13% of full, keeps the 9:1 retain:forget
+# ratio) is large enough that head-width mechanisms start to bite — the
+# ng_plus scale-cliff (GO@12, never forgets@750) and the FT reverse
+# artefact (BROKEN@12, perfect@750) are invisible at 12-id.
+case "$SCALE" in
+    12id)   N_RETAIN=8;  N_FORGET=4 ;;
+    100id)  N_RETAIN=90; N_FORGET=10 ;;
+    *)      echo "ERROR: unknown scale '$SCALE' (use 12id or 100id)" >&2; exit 1 ;;
+esac
+
 cd "$PROJECT_DIR"
-echo "[$(date)] Feasibility gate (${DATASET}) → $OUT"
+echo "[$(date)] Feasibility gate (${DATASET}, ${SCALE}) → $OUT"
 echo "[$(date)] Methods: ${METHODS[*]}"
 
 # GPU preflight
@@ -70,8 +84,9 @@ python src/feasibility_study.py \
     --methods "${METHODS[@]}" \
     --multipliers 1 3 10 \
     --epochs 3 \
-    --n_retain 8 --n_forget 4 \
+    --n_retain "$N_RETAIN" --n_forget "$N_FORGET" \
     --imgs_per_id 16 \
+    --scale "$SCALE" \
     --step_scale 1.0 \
     --device cuda 2>&1
 
