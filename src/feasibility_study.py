@@ -123,7 +123,12 @@ def run_method(method: str, model, csv_path: str, device,
             registry = r
             break
     if registry is None:
-        return {"error": f"unknown method {method}"}
+        # Always carry method/multiplier so verdict()'s filter
+        # `r["method"] == method` cannot KeyError on error rows
+        # (the 20 Aug run: "unknown method 12id" crashed the verdict
+        #  loop because the error dict lacked these keys).
+        return {"method": method, "multiplier": multiplier,
+                "error": f"unknown method {method}"}
 
     n_id_classes = infer_identity_classes(csv_path)
 
@@ -188,7 +193,7 @@ def verdict(rows: list[dict], method: str) -> str:
         v = r.get(key)
         return float(v) if v is not None else default
 
-    rs = [r for r in rows if r["method"] == method and "error" not in r]
+    rs = [r for r in rows if r.get("method") == method and "error" not in r]
     if not rs:
         return "ERROR"
     base = rs[0]
