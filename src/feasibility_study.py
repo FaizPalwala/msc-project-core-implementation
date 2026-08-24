@@ -286,9 +286,14 @@ def main() -> None:
             if "error" in r:
                 print(f"  [{method} x{mult}] ERROR: {r['error'][:80]}")
             else:
-                print(f"  [{method} x{mult:<4}] retain={r['retain_id_acc']:.3f} "
-                      f"forget={r['forget_id_acc']:.3f} "
-                      f"mia={r['mia_mean_auc']:.3f} ({r['time_s']}s)")
+                # Metrics can be None when a method produces a degenerate
+                # model at extreme step_scale (eval returns nothing) — never
+                # let the progress line crash the whole gate.
+                def _f(v):
+                    return "n/a" if v is None else f"{v:.3f}"
+                print(f"  [{method} x{mult:<4}] retain={_f(r.get('retain_id_acc'))} "
+                      f"forget={_f(r.get('forget_id_acc'))} "
+                      f"mia={_f(r.get('mia_mean_auc'))} ({r.get('time_s')}s)")
 
     # ── 4. Verdicts ───────────────────────────────────────────────────────
     print("\n=== FEASIBILITY VERDICTS ===")
