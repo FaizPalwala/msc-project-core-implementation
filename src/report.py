@@ -228,18 +228,27 @@ def _load_feasibility(results_dir: Path) -> dict[str, Any] | None:
     carries {subsample, scale, rows (per method×multiplier budget sweep),
     verdicts (method → GO/TUNE/BROKEN)}.  Returns {"<scale>": data, ...}
     or None when the gate didn't run.
+
+    Legacy note: the pre-multi-scale gate wrote results/feasibility_<dataset>/
+    (scale=None, the 12-id gate).  It is ALWAYS loaded and labelled "12id"
+    so the trajectory table keeps its 12-id column even after the
+    scale-tagged dirs appear (a bare glob of the *_id dirs would silently
+    drop it once any scale dir has results).
     """
     dataset = results_dir.name
-    cands = sorted(results_dir.parent.glob(f"feasibility_{dataset}_*id/feasibility_results.json"))
-    if not cands:
-        cands = [results_dir.parent / f"feasibility_{dataset}" / "feasibility_results.json",
-                 results_dir.parent / "feasibility" / "feasibility_results.json"]
+    cands: list[Path] = sorted(results_dir.parent.glob(f"feasibility_{dataset}_*id/feasibility_results.json"))
+    legacy = results_dir.parent / f"feasibility_{dataset}" / "feasibility_results.json"
+    if legacy.exists():
+        cands.append(legacy)
     loaded: dict[str, Any] = {}
     for path in cands:
         if path.exists():
             with open(path) as f:
                 data = json.load(f)
-            scale = data.get("scale", path.parent.name)
+            scale = data.get("scale")
+            if not scale:
+                # Pre-scale-tag runs are the 12-id gate.
+                scale = "12id"
             loaded[scale] = data
             logger.info(f"[Report] Loaded feasibility gate: {path} "
                         f"({len(data.get('verdicts', {}))} verdicts)")
