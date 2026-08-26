@@ -66,33 +66,36 @@ the CSV** at runtime (600-id vs 750-id needs no code change).
 **Balanced lane** — Slurm dependency graph (edges = `sbatch --dependency`):
 
 ```
-                        ┌──> canary (tuned, after hparam) ──────────────────────────┐
-                        │                                                          │
-                        ├──> ablation (tuned base, after hparam) ──────────────────┤
-                        │                                                          │
-train ────────────────> single_shot ──> hparam ×9 ──> single_shot_best ──┐          │
-  (1 GPU)               (defaults)     (9 methods,   (tuned)             │          │
-                                        parallel)    ├──> iterative(uniform) ──> stability(uniform) ──┐
-                                                     └──> iterative(poisson) ──> stability(poisson) ──┤
-                                                     (both need single_shot + hparam)                │
-                                                                                                      │
-feasibility gate (parallel, no dependency) ───────────────────────────────────────────────────────────┴──> report
+                                  ┌──> canary (after hparam)                                        ┐
+                                  │                                                                 │
+[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┐                                    │
+                                  │                            │                                    │
+                                  ├──> ablation (after hparam)                                      ┤
+                                  │                                                                 │
+                                  └──> iterative ×2 ───────────┴──> stability ×2 ───────────────────┴──> [ report ]
+
+[ feasibility ] (parallel, no dependency) ──────────────────────────────────────────────────────────────────> [ report ]
 ```
+
+*GPU counts: train 1 GPU; single_shot 1 GPU; hparam 1 GPU × 9 jobs (parallel);
+single_shot_best 1 GPU; iterative 1 GPU × 2 lanes; stability CPU; ablation,
+canary, feasibility 1 GPU each; report CPU.*
 
 **Imbalanced lane** (replaces the schedule lanes — axis is the popularity
 gradient, not time):
 
 ```
-                        ┌──> canary (tuned, after hparam) ───────────────────────────────┐
-                        │                                                               │
-                        ├──> ablation (tuned base, after hparam) ───────────────────────┤
-                        │                                                               │
-train ────────────────> single_shot ──> hparam ×9 ──> single_shot_best ──┬──> equity plots ──┤
-  (1 GPU)               (defaults)     (9 methods,   (tuned)             │                 │
-                                        parallel)    ├──> per-bin oracles (B) ──┼──> budget sweep (C)
-                                                     └──> Protocol C select ────┘        (needs B + C)
-                                                                                             │
-feasibility gate (parallel, no dependency) ───────────────────────────────────────────────────┴──> report
+                                  ┌──> canary (after hparam)                                                            ┐
+                                  │                                                                                     │
+[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┬──> equity plots                                        ┐
+                                  │                              │                                                      │
+                                  ├──> ablation (after hparam)                                                          ┤
+                                  │                              │                                                      │
+                                                                 ├──> per-bin oracles (B) ────┐                         │
+                                                                 │                            │                         │
+                                                                 └──> Protocol C select ──────┴──> budget sweep (C)─────┴──> [ report ]
+
+[ feasibility ] (parallel, no dependency) ────────────────────────────────────────────────────────────────────────────────> [ report ]
 ```
 
 **Config routing:** only `single_shot` uses default configs. Everything

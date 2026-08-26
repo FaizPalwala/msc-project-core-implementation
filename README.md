@@ -121,33 +121,32 @@ configs — everything downstream runs with the HP-tuned best configs**).
 and Poisson, run in parallel):
 
 ```
-                        ┌──> canary (tuned, after hparam) ──────────────────────────┐
-                        │                                                          │
-                        ├──> ablation (tuned base, after hparam) ──────────────────┤
-                        │                                                          │
-[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best (tuned) ──┐            │
-   (defaults)             (9 methods,      │                           │            │
-                          parallel)        ├──> iterative(uniform) ──> stability(uniform) ──┐
-                                            └──> iterative(poisson) ──> stability(poisson) ──┤
-                                            (both need single_shot + hparam)                │
-                                                                                             │
-[ feasibility ] (parallel, no dependency) ───────────────────────────────────────────────────┴──> [ report ]
+                                  ┌──> canary (after hparam)                                        ┐
+                                  │                                                                 │
+[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┐                                    │
+                                  │                            │                                    │
+                                  ├──> ablation (after hparam)                                      ┤
+                                  │                                                                 │
+                                  └──> iterative ×2 ───────────┴──> stability ×2 ───────────────────┴──> [ report ]
+
+[ feasibility ] (parallel, no dependency) ──────────────────────────────────────────────────────────────────> [ report ]
 ```
 
 **Imbalanced lane** (replaces the schedule lanes — its axis is the popularity
 gradient, not time):
 
 ```
-                        ┌──> canary (tuned, after hparam) ───────────────────────────────┐
-                        │                                                               │
-                        ├──> ablation (tuned base, after hparam) ───────────────────────┤
-                        │                                                               │
-[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best (tuned) ──┬──> equity plots ──┤
-   (defaults)             (9 methods,      │                            │                 │
-                          parallel)        ├──> per-bin oracles (B) ──┼──> budget sweep (C)
-                                            └──> Protocol C select ────┘        (needs B + C)
-                                                                                        │
-[ feasibility ] (parallel, no dependency) ──────────────────────────────────────────────┴──> [ report ]
+                                  ┌──> canary (after hparam)                                                            ┐
+                                  │                                                                                     │
+[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┬──> equity plots                                        ┐
+                                  │                              │                                                      │
+                                  ├──> ablation (after hparam)                                                          ┤
+                                  │                              │                                                      │
+                                                                 ├──> per-bin oracles (B) ────┐                         │
+                                                                 │                            │                         │
+                                                                 └──> Protocol C select ──────┴──> budget sweep (C)─────┴──> [ report ]
+
+[ feasibility ] (parallel, no dependency) ────────────────────────────────────────────────────────────────────────────────> [ report ]
 ```
 
 *Dependency semantics (from `hpc_full_pipeline.sh`): `single_shot` and
