@@ -70,48 +70,47 @@ File format (CSV or Parquet) is auto-detected from the extension.
 
 ## Pipeline Stages
 
-The evaluation pipeline. The feasibility gate runs first as the initial
-pre-flight (it trains its own small model, so it has no dependency on the
-full-scale train job — but its verdicts shape how every downstream result is
-read); the single-shot comparison then feeds the tuned chain, with the
-verification studies branching off the tuned configs:
+![Overall experimental design](docs/figures/experimental_design.png)
 
-```
-initial feasibility gate (12 → 100 → 750-id at 1× / 3× / 10×)  [GO / TUNE / BROKEN]
-  │
-  ↓
-train → single_shot (defaults) → hparam → single_shot_best (tuned) → iterative → stability ──┐
-                                   │                                                          │
-                                   ├──→ ablation (AdaptiForget, tuned base) ─────────────────┤
-                                   ├──→ canary (tuned unlearning) ───────────────────────────┤
-                                   └──→ (imbalanced) equity plots (after single_shot_best) ───┴──→ report
-```
+*Overall experimental design. **Green** stages bracket the run: the initial
+feasibility gate (before) and the final report (after). **Yellow** stages run at
+default configurations (train, single-shot defaults). **Orange** is the
+hyperparameter search. **Red** stages run at tuned configurations (tuned
+single-shot, ablation, canary, equity plots, both iterative schedules, and the
+stability study). The tuned lanes branch from the hyperparameter stage; both
+iterative schedules feed the stability study; every lane closes on the report.*
 
-- **Feasibility gate** — multi-scale (12-id + 100-id subsamples, plus the 750-id
-  column from the hparam grids), budget sweep 1×/3×/10× per method. Verdicts:
-  `GO` / `TUNE` / `TUNE(retain-collapse)` / `BROKEN`. Runs in parallel with the
-  upstream chain (no train dependency — it trains its own small model) but is
-  logically the first question asked: *is this method's full-scale failure a
-  config problem (responds to budget) or structural (no response at any scale)?*
-- **train** — dual-head ResNet-18 on the full dataset (per-seed checkpoints).
-- **single_shot (defaults)** — every method at its YAML-documented default:
-  the out-of-the-box behaviour a practitioner would get.
-- **hparam** — one grid-search job per method (parallel); writes
+Stage-by-stage:
+
+- **Feasibility gate** *(green, runs first)* — multi-scale (12-id + 100-id
+  subsamples, plus the 750-id column from the hparam grids), budget sweep
+  1×/3×/10× per method. Verdicts: `GO` / `TUNE` / `TUNE(retain-collapse)` /
+  `BROKEN`. It trains its own small model, so it has no dependency on the
+  full-scale train job — but its verdicts shape how every downstream result is
+  read: *is this method's full-scale failure a config problem (responds to
+  budget) or structural (no response at any scale)?*
+- **train** *(yellow, defaults)* — dual-head ResNet-18 on the full dataset
+  (per-seed checkpoints).
+- **single_shot (defaults)** *(yellow)* — every method at its YAML-documented
+  default: the out-of-the-box behaviour a practitioner would get.
+- **hparam** *(orange)* — one grid-search job per method (parallel); writes
   `{method}_best_config.json` ranked by the v2 erasure-conditioned UF score
   (§5.1, with the hard rejection gate §6.1).
-- **single_shot_best (tuned)** — every method at its UF-best config: the
-  method's ceiling. The default-vs-tuned contrast is the config-fragility result.
-- **iterative → stability** — 15-step sequential deletion (5 identities/step),
-  cumulative mode, uniform + Poisson schedules in parallel lanes; stability
-  plots derived from the per-step series.
-- **ablation** — AdaptiForget component ablation at its tuned base (early-stop,
-  adaptive-λ, mask-refresh, KL-distil, masking).
-- **canary** — Tier-4 ground-truth deletion proof: identities tagged in
-  training, gap between tagged/original confidence after unlearning.
-- **(imbalanced) equity plots** — per-identity equity across the popularity
-  bins, using the tuned single-shot results.
-- **report** — the human-readable summary (Markdown + LaTeX + CSV flat tables)
-  for both datasets, waiting on all of the above.
+- **single_shot_best (tuned)** *(red)* — every method at its UF-best config:
+  the method's ceiling. The default-vs-tuned contrast is the config-fragility
+  result.
+- **iterative → stability** *(red)* — 15-step sequential deletion
+  (5 identities/step), cumulative mode; the uniform and Poisson schedule lanes
+  run in parallel and both feed the stability study (16 publication-quality
+  plots).
+- **ablation** *(red)* — AdaptiForget component ablation at its tuned base
+  (early-stop, adaptive-λ, mask-refresh, KL-distil, masking).
+- **canary** *(red)* — Tier-4 ground-truth deletion proof: identities tagged
+  in training, gap between tagged/original confidence after unlearning.
+- **(imbalanced) equity plots** *(red)* — per-identity equity across the
+  popularity bins, using the tuned single-shot results.
+- **report** *(green, runs last)* — the human-readable summary (Markdown +
+  LaTeX + CSV flat tables) for both datasets, waiting on every lane above.
 
 Config routing (design intent: **only the original single-shot uses default
 configs — everything downstream runs with the HP-tuned best configs**):
