@@ -98,14 +98,15 @@ for M in $HP_METHODS; do
 done
 HP_DEPS="${HP_DEPS#:}"
 
-# ── Stage 2c: C2/C3 feasibility gate (small-scale pre-flight, parallel) ─
-# Trains its own ~12-id subsampled model and sweeps each method's budget
+# ── Stage 2c: C2/C3 feasibility gate (multi-scale pre-flight, parallel) ─
+# Trains its own small subsampled model (12-id by default; 100-id via the
+# second arg — see slurm_feasibility.sh) and sweeps each method's budget
 # at 1x/3x/10x → verdicts (GO/TUNE/BROKEN).  No dependency on the train
 # job (it subsamples from the dataset CSV directly), so it runs alongside
-# single-shot + HP.  Results → results/feasibility_<dataset>/.
+# single-shot + HP.  Results → results/feasibility_<dataset>_<scale>/.
 echo "[$(date)] Submitting feasibility gate…"
 FEAS_JOB=$(sbatch --parsable \
-    "$PROJECT_DIR/scripts/slurm_feasibility.sh" "$DATASET")
+    "$PROJECT_DIR/scripts/slurm_feasibility.sh" "$DATASET" "12id")
 echo "  Feasibility gate job: $FEAS_JOB"
 
 # ── Stage 2b: Single-shot with BEST configs (after all HP jobs) ─────────

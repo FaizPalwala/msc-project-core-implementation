@@ -318,7 +318,8 @@ oracle, not a pathological case.
 **Purpose.** A cheap, small-scale pre-flight that answers, before a full run:
 is a method's failure at full scale a *configuration* problem (it responds to
 more budget) or *structural* (no response even at 10×)? Runs as pipeline
-Stage 2c on a ~12-identity subsample, sweeping each method's budget at 1×/3×/10×
+Stage 2c on identity subsamples (12-id and 100-id; see below), sweeping each
+method's budget at 1×/3×/10×
 (`src/feasibility_study.py`, `scripts/slurm_feasibility.sh`).
 
 **Multi-scale design (2026-08, canonical).** A single gate scale cannot
@@ -544,7 +545,8 @@ methods), while saliency-mask methods invert (high-bin easiest).
 ## 13. Reporting and the Artifact Trail
 
 **Report** (`src/report.py`) synthesises: tuned single-shot table (headline) +
-default-config table (evidence), feasibility verdict matrix, iterative tables
+default-config table (evidence), the multi-scale feasibility trajectory table
+(method × 12id/100id verdicts + 750-id outcome), iterative tables
 per schedule, canary membership-gap table, and the ablation table — all from
 JSON/CSV artifacts, never recomputed.
 

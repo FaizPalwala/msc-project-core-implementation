@@ -70,14 +70,48 @@ File format (CSV or Parquet) is auto-detected from the extension.
 
 ## Pipeline Stages
 
+The evaluation pipeline. The feasibility gate runs first as the initial
+pre-flight (it trains its own small model, so it has no dependency on the
+full-scale train job — but its verdicts shape how every downstream result is
+read); the single-shot comparison then feeds the tuned chain, with the
+verification studies branching off the tuned configs:
+
 ```
+initial feasibility gate (12 → 100 → 750-id at 1× / 3× / 10×)  [GO / TUNE / BROKEN]
+  │
+  ↓
 train → single_shot (defaults) → hparam → single_shot_best (tuned) → iterative → stability ──┐
-  │                                  │                                                       │
-  ├──→ feasibility gate (C2/C3, parallel — ~12-id budget sweep) ─────────────────────────────┤
-  ├──→ ablation (after hparam; tuned AdaptiForget) ─────────────────────────────────────────┤
-  ├──→ canary (after hparam; tuned unlearning) ─────────────────────────────────────────────┤
-  └──→ (imbalanced) equity plots (after single_shot_best; tuned) ───────────────────────────┴──→ report
+                                   │                                                          │
+                                   ├──→ ablation (AdaptiForget, tuned base) ─────────────────┤
+                                   ├──→ canary (tuned unlearning) ───────────────────────────┤
+                                   └──→ (imbalanced) equity plots (after single_shot_best) ───┴──→ report
 ```
+
+- **Feasibility gate** — multi-scale (12-id + 100-id subsamples, plus the 750-id
+  column from the hparam grids), budget sweep 1×/3×/10× per method. Verdicts:
+  `GO` / `TUNE` / `TUNE(retain-collapse)` / `BROKEN`. Runs in parallel with the
+  upstream chain (no train dependency — it trains its own small model) but is
+  logically the first question asked: *is this method's full-scale failure a
+  config problem (responds to budget) or structural (no response at any scale)?*
+- **train** — dual-head ResNet-18 on the full dataset (per-seed checkpoints).
+- **single_shot (defaults)** — every method at its YAML-documented default:
+  the out-of-the-box behaviour a practitioner would get.
+- **hparam** — one grid-search job per method (parallel); writes
+  `{method}_best_config.json` ranked by the v2 erasure-conditioned UF score
+  (§5.1, with the hard rejection gate §6.1).
+- **single_shot_best (tuned)** — every method at its UF-best config: the
+  method's ceiling. The default-vs-tuned contrast is the config-fragility result.
+- **iterative → stability** — 15-step sequential deletion (5 identities/step),
+  cumulative mode, uniform + Poisson schedules in parallel lanes; stability
+  plots derived from the per-step series.
+- **ablation** — AdaptiForget component ablation at its tuned base (early-stop,
+  adaptive-λ, mask-refresh, KL-distil, masking).
+- **canary** — Tier-4 ground-truth deletion proof: identities tagged in
+  training, gap between tagged/original confidence after unlearning.
+- **(imbalanced) equity plots** — per-identity equity across the popularity
+  bins, using the tuned single-shot results.
+- **report** — the human-readable summary (Markdown + LaTeX + CSV flat tables)
+  for both datasets, waiting on all of the above.
 
 Config routing (design intent: **only the original single-shot uses default
 configs — everything downstream runs with the HP-tuned best configs**):
@@ -88,9 +122,9 @@ configs — everything downstream runs with the HP-tuned best configs**):
 | Single-shot | `single_shot.py` | **DEFAULT configs** (the baseline) | After train |
 | HP search | `hparam_search.py` | Grid/random search, UF-score ranking | Parallel with single-shot |
 | Single-shot-best | `single_shot.py --best_configs` | **Tuned** configs (headline results) | After all HP jobs |
-| Feasibility gate | `feasibility_study.py` | C2/C3 verdict matrix (GO/TUNE/BROKEN) — wired into the pipeline; also runs standalone | Parallel (no train dep) |
+| Feasibility gate | `feasibility_study.py` | Multi-scale (12-id + 100-id) budget sweep 1×/3×/10× → verdicts GO / TUNE / TUNE(retain-collapse) / BROKEN — wired into the pipeline; also runs standalone | Parallel (no train dep) |
 | Equity plots | `imbalanced_plots.py` | 6 per-bin equity plots + Kruskal-Wallis (imbalanced only) | **After single_shot_best (tuned)** |
-| Iterative | `iterative.py` | Schedule protocol (uniform 5×15, or Poisson), cumulative + fresh, re-emergence, `--order_seed` for order-stability | **After best configs** |
+| Iterative | `iterative.py` | Schedule protocol (uniform 5×15, or Poisson) — **cumulative mode** (model never reset; effects compound); fresh mode (restart from M₀ per step) implemented but **not part of the canonical run** — future work; re-emergence, `--order_seed` for order-stability | **After best configs** |
 | Stability | `stability.py` | 16 publication-quality plots | After iterative |
 | Ablation | `ablation_study.py` | AdaptiForget component ablation (6 variants, one component disabled each) | **After hparam; tuned AdaptiForget base** |
 | Canary | `canary.py` | Pixel-level ground-truth deletion proof | **After hparam; tuned unlearning** |
@@ -134,9 +168,11 @@ python src/ablation_study.py --csv ../bench/metadata/dataset.csv \
     --model results/checkpoints/original_model_best.pt --out results/ablation \
     --best_configs results/hparam
 
-# Method feasibility gate (cheap C2/C3 triage before a full run — GO/TUNE/BROKEN)
+# Method feasibility gate (multi-scale pre-flight before a full run —
+# GO/TUNE/BROKEN at 12-id; repeat with --n_retain 90 --n_forget 10 --scale 100id
+# for the head-width column of the trajectory table)
 python src/feasibility_study.py --src_csv ../bench/metadata/dataset.csv \
-    --out results/feasibility --device auto
+    --out results/feasibility_12id --device auto --scale 12id
 ```
 
 ## Methods

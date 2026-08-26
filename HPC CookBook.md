@@ -202,9 +202,10 @@ python tests/smoke_test.py
 
 ### Method Feasibility Gate (C2/C3 triage — before the expensive full run)
 
-Cheap gate that subsamples ~12 real identities, trains a tiny model, and
-sweeps each method's budget at 1×/3×/10× through the real method
-registries, returning GO / TUNE / BROKEN verdicts per method.  Use it to
+Multi-scale gate: subsamples real identities (12-id fast-fail, or 100-id ≈
+13% of full for the head-width column), trains a tiny model, and sweeps each
+method's budget at 1×/3×/10× through the real method registries, returning
+GO / TUNE / TUNE(retain-collapse) / BROKEN verdicts per method.  Use it to
 decide whether a method is healthy at scale (GO), needs config work
 (TUNE), or is structurally broken (BROKEN — remove/redesign) *before*
 spending the full-run GPU budget.  Locally on Apple Silicon:
@@ -212,22 +213,25 @@ spending the full-run GPU budget.  Locally on Apple Silicon:
 ```bash
 UNLEARN_NUM_WORKERS=0 PYTHONPATH="" python3 -u src/feasibility_study.py \
     --src_csv /path/to/metadata/dataset.csv \
-    --out results/feasibility_balanced \
-    --epochs 3 --step_scale 1.0 --device mps
+    --out results/feasibility_balanced_12id \
+    --epochs 3 --step_scale 1.0 --device mps --scale 12id
+# 100-id column (90 retain + 10 forget): add --n_retain 90 --n_forget 10 --scale 100id
 ```
 
-On Aire (GPU, full budgets, ~4 h) — **also wired into the full pipeline**
-(Stage 2c, runs in parallel with single-shot/HP; the report renders the
-verdict matrix):
+On Aire (GPU, full budgets, ~4 h per scale) — **also wired into the full
+pipeline** (Stage 2c, runs in parallel with single-shot/HP; the report
+renders the multi-scale trajectory table):
 
 ```bash
-sbatch scripts/slurm_feasibility.sh balanced
-# → results/feasibility_balanced/feasibility_results.json (rows + verdicts)
+sbatch scripts/slurm_feasibility.sh balanced 12id
+sbatch scripts/slurm_feasibility.sh balanced 100id
+# → results/feasibility_balanced_<scale>/feasibility_results.json (rows + verdicts)
 ```
 
-Verdicts: GO = forgets+retains at some budget; TUNE = responds to budget,
-needs config work; TUNE(retain-collapse) = forgets but kills retain;
-BROKEN = no response even at 10× (remove/redesign).  `--step_scale`
+Verdicts (v2): GO = forgets+retains at some budget; TUNE = responds to
+budget, needs config work; TUNE(retain-collapse) = forgets but kills
+retain; BROKEN = no response even at 10× (remove/redesign).  The 750-id
+column of the trajectory table comes from the hparam grids.  `--step_scale`
 shrinks base budgets for CPU checks; `--methods` restricts the sweep.
 
 

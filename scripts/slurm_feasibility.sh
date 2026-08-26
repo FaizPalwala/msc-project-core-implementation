@@ -11,17 +11,18 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 set -euo pipefail
-# Usage: sbatch scripts/slurm_feasibility.sh [dataset] [methods...]
+# Usage: sbatch scripts/slurm_feasibility.sh [dataset] [scale] [methods...]
 #   dataset : balanced (default) | imbalanced — which CSV to subsample
+#   scale   : 12id (default, 8 retain + 4 forget) | 100id (90 + 10)
 #   methods : space-separated subset of
 #             ga ng_plus adaptiforget msg msg_kd ct ft srl budget_scaled
 #             (default: all 9)
 #
-# Cheap pre-flight before the expensive full re-run: trains a small model
-# on ~12 real identities and sweeps each method's budget at 1x/3x/10x to
-# answer C2/C3 — is the 750-id failure a CONFIG problem (method responds
+# Multi-scale pre-flight before the expensive full re-run: trains a small model
+# on a subsample of real identities and sweeps each method's budget at 1x/3x/10x
+# to answer C2/C3 — is the 750-id failure a CONFIG problem (method responds
 # to more budget) or STRUCTURAL (no response even at 10x)?
-# Results → results/feasibility_<dataset>/feasibility_results.json
+# Results → results/feasibility_<dataset>_<scale>/feasibility_results.json
 
 # ── Repo root ────────────────────────────────────────────────────────────
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
