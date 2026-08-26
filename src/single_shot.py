@@ -358,12 +358,9 @@ def run_single_shot_multi_seed(
     # ── Aggregate per-identity + demographic CSVs across seeds ───────────
     # Each seed's run_single_shot writes seed_N/single_shot_per_identity.csv
     # + single_shot_demographic.csv.  stability.py's plot 10 (per-identity
-    # signatures) and plot 11 (demographic heatmap) read TOP-LEVEL copies —
-    # the pipeline passes $OUT/single_shot/single_shot_per_identity.csv,
-    # which never existed → those two plots silently SKIPPED in every run
-    # (the v1.3 stability dirs have 14/16 plots).  Aggregate the per-seed
-    # files (mean AUC per method×group across seeds) and write top-level
-    # copies so the plots finally render.
+    # signatures) and plot 11 (demographic heatmap) read TOP-LEVEL copies, so
+    # aggregate the per-seed files (mean AUC per method×group across seeds)
+    # and write top-level copies for the plots to render.
     per_id_agg: dict[tuple, list[float]] = defaultdict(list)
     demog_agg: dict[tuple, list[float]] = defaultdict(list)
     for seed_dir in sorted(out_path.glob("seed_*")):
