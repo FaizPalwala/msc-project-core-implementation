@@ -113,7 +113,49 @@ Stage-by-stage:
   LaTeX + CSV flat tables) for both datasets, waiting on every lane above.
 
 Config routing (design intent: **only the original single-shot uses default
-configs — everything downstream runs with the HP-tuned best configs**):
+configs — everything downstream runs with the HP-tuned best configs**).
+
+### Slurm job dependency graph
+
+**Balanced lane** (iterative + stability are the two schedule lanes, uniform
+and Poisson, run in parallel):
+
+```
+                        ┌──> canary (tuned, after hparam) ──────────────────────────┐
+                        │                                                          │
+                        ├──> ablation (tuned base, after hparam) ──────────────────┤
+                        │                                                          │
+[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best (tuned) ──┐            │
+   (defaults)             (9 methods,      │                           │            │
+                          parallel)        ├──> iterative(uniform) ──> stability(uniform) ──┐
+                                            └──> iterative(poisson) ──> stability(poisson) ──┤
+                                            (both need single_shot + hparam)                │
+                                                                                             │
+[ feasibility ] (parallel, no dependency) ───────────────────────────────────────────────────┴──> [ report ]
+```
+
+**Imbalanced lane** (replaces the schedule lanes — its axis is the popularity
+gradient, not time):
+
+```
+                        ┌──> canary (tuned, after hparam) ───────────────────────────────┐
+                        │                                                               │
+                        ├──> ablation (tuned base, after hparam) ───────────────────────┤
+                        │                                                               │
+[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best (tuned) ──┬──> equity plots ──┤
+   (defaults)             (9 methods,      │                            │                 │
+                          parallel)        ├──> per-bin oracles (B) ──┼──> budget sweep (C)
+                                            └──> Protocol C select ────┘        (needs B + C)
+                                                                                        │
+[ feasibility ] (parallel, no dependency) ──────────────────────────────────────────────┴──> [ report ]
+```
+
+*Dependency semantics (from `hpc_full_pipeline.sh`): `single_shot` and
+`hparam` both wait on `train` (parallel); `single_shot_best`, `ablation` and
+`canary` wait on all hparam jobs; `iterative` waits on `single_shot` + `hparam`
+(so both schedule lanes use tuned configs with the default run as evidence);
+`stability` waits on its `iterative` lane + `single_shot_best`; the report
+waits on every lane.*
 
 | Stage | Script | Config used | Parallel? |
 |-------|--------|-------------|-----------|
@@ -123,14 +165,11 @@ configs — everything downstream runs with the HP-tuned best configs**):
 | Single-shot-best | `single_shot.py --best_configs` | **Tuned** configs (headline results) | After all HP jobs |
 | Feasibility gate | `feasibility_study.py` | Multi-scale (12-id + 100-id) budget sweep 1×/3×/10× → verdicts GO / TUNE / TUNE(retain-collapse) / BROKEN — wired into the pipeline; also runs standalone | Parallel (no train dep) |
 | Equity plots | `imbalanced_plots.py` | 6 per-bin equity plots + Kruskal-Wallis (imbalanced only) | **After single_shot_best (tuned)** |
-| Iterative | `iterative.py` | Schedule protocol (uniform 5×15, or Poisson) — **cumulative mode** (model never reset; effects compound); fresh mode (restart from M₀ per step) implemented but **not part of the canonical run** — future work; re-emergence, `--order_seed` for order-stability | **After best configs** |
-| Stability | `stability.py` | 16 publication-quality plots | After iterative |
+| Iterative | `iterative.py` | Schedule protocol (uniform 5×15, or Poisson) — **cumulative mode** (model never reset; effects compound); fresh mode (restart from M₀ per step) implemented but **not part of the canonical run** — future work; re-emergence, `--order_seed` for order-stability | **After single_shot + hparam** |
+| Stability | `stability.py` | 16 publication-quality plots | After its iterative lane + single_shot_best |
 | Ablation | `ablation_study.py` | AdaptiForget component ablation (6 variants, one component disabled each) | **After hparam; tuned AdaptiForget base** |
 | Canary | `canary.py` | Pixel-level ground-truth deletion proof | **After hparam; tuned unlearning** |
-| Report | `report.py` | LaTeX/Markdown synthesis of all results | After stability + canary + ablation |
-
-The imbalanced chain skips iterative + stability (no `forget_step` to
-iterate over — its axis is the popularity gradient, not time).
+| Report | `report.py` | LaTeX/Markdown synthesis of all results | After every lane |
 
 ## Quick Start
 

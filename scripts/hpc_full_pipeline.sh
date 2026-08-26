@@ -4,14 +4,16 @@
 # ==========================================
 # ONE submission runs the whole suite at the designed parallelism:
 #
-#   train ──→ single_shot ∥ hparam×8 ──→ single_shot_best ──┐
+#   train ──→ single_shot ∥ hparam×9 ──→ single_shot_best ──┐
 #                     │                                       ├──→ report
 #                     ├─→ iterative(uniform) → stability     ┘
 #                     ├─→ iterative(poisson) → stability        (balanced lanes)
-#                     └─→ canary (independent)
+#                     ├─→ ablation (tuned base, after hparam)
+#                     ├─→ canary (tuned unlearning, after hparam)
+#                     └─→ feasibility gate (parallel, no dependency)
 #
 #   imbalanced replaces the schedule lanes with:
-#       single_shot_best → per-bin oracles (B) ∥ Protocol C select
+#       single_shot_best → equity plots ∥ per-bin oracles (B) ∥ Protocol C select
 #                        → budget sweep (C) → report
 #
 # The two schedule lanes (uniform + poisson) run IN PARALLEL after the

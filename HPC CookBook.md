@@ -63,25 +63,43 @@ the CSV** at runtime (600-id vs 750-id needs no code change).
 
 ## Pipeline Stages
 
-```
-                     ┌─ single_shot (DEFAULT configs — the only default user) ┐
-train ───────────────┼─ hparam ×9 methods, ALL parallel ─────────────────────┤
-                     └────────────────────────────────────────────────────────┘
-                          │
-                          ├─→ single_shot_best (tuned) → iterative (tuned) → stability
-                          ├─→ ablation (tuned AdaptiForget, after hparam) ──┤
-                          ├─→ canary (tuned unlearning, after hparam) ──────┤
-                          └──────────────────────────────────────────────────┴─→ report
+**Balanced lane** — Slurm dependency graph (edges = `sbatch --dependency`):
 
-imbalanced adds (after single_shot_best):
-  equity plots (per-bin fairness, TUNED) ──────────────────────────┐
-  per-bin oracles (Protocol B) ─┐                                  │
-  Protocol C selection ─────────┼─→ budget sweep (Protocol C) ─────┴─→ report
+```
+                        ┌──> canary (tuned, after hparam) ──────────────────────────┐
+                        │                                                          │
+                        ├──> ablation (tuned base, after hparam) ──────────────────┤
+                        │                                                          │
+train ────────────────> single_shot ──> hparam ×9 ──> single_shot_best ──┐          │
+  (1 GPU)               (defaults)     (9 methods,   (tuned)             │          │
+                                        parallel)    ├──> iterative(uniform) ──> stability(uniform) ──┐
+                                                     └──> iterative(poisson) ──> stability(poisson) ──┤
+                                                     (both need single_shot + hparam)                │
+                                                                                                      │
+feasibility gate (parallel, no dependency) ───────────────────────────────────────────────────────────┴──> report
+```
+
+**Imbalanced lane** (replaces the schedule lanes — axis is the popularity
+gradient, not time):
+
+```
+                        ┌──> canary (tuned, after hparam) ───────────────────────────────┐
+                        │                                                               │
+                        ├──> ablation (tuned base, after hparam) ───────────────────────┤
+                        │                                                               │
+train ────────────────> single_shot ──> hparam ×9 ──> single_shot_best ──┬──> equity plots ──┤
+  (1 GPU)               (defaults)     (9 methods,   (tuned)             │                 │
+                                        parallel)    ├──> per-bin oracles (B) ──┼──> budget sweep (C)
+                                                     └──> Protocol C select ────┘        (needs B + C)
+                                                                                             │
+feasibility gate (parallel, no dependency) ───────────────────────────────────────────────────┴──> report
 ```
 
 **Config routing:** only `single_shot` uses default configs. Everything
 downstream — `single_shot_best`, iterative, stability inputs, equity plots,
-ablation, canary unlearning — uses the HP-tuned best configs.
+ablation, canary unlearning — uses the HP-tuned best configs.  `iterative`
+waits on `single_shot` + `hparam`; `stability` waits on its `iterative` lane +
+`single_shot_best`; the report waits on every lane.
 
 | Stage | Script | GPU | Description |
 |-------|--------|-----|-------------|
