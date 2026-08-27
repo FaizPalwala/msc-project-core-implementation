@@ -65,15 +65,15 @@ the CSV** at runtime (600-id vs 750-id needs no code change).
 **Balanced lane** — Slurm dependency graph (edges = `sbatch --dependency`):
 
 ```
-                                  ┌──> canary                                                         ┐
+                                  ┌──> canary ────────────────────────────────────────────────────────┐
+                                  │                                                                   │
+                                  ├──> ablation ──────────────────────────────────────────────────────┤
                                   │                                                                   │
 [ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┐                                      │
                                   │                            │                                      │
-                                  ├──> ablation                                                       ┤
-                                  │                            │                                      │
                                   └──> iterative ×2 ───────────┴──> stability ×2 ─────────────────────┴──> [ report ]
 
-[ feasibility ] (parallel, no dependency)                     ───────────> [ report ]
+[ feasibility ] (parallel, no dependency)────────────────────────────────────────────────────────────────> [ report ]
 ```
 
 *GPU counts: train 1 GPU; single_shot 1 GPU; hparam 1 GPU × 9 jobs (parallel);

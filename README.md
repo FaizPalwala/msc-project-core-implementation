@@ -121,15 +121,15 @@ configs — everything downstream runs with the HP-tuned best configs**).
 and Poisson, run in parallel):
 
 ```
-                                  ┌──> canary                                                         ┐
+                                  ┌──> canary ────────────────────────────────────────────────────────┐
+                                  │                                                                   │
+                                  ├──> ablation ──────────────────────────────────────────────────────┤
                                   │                                                                   │
 [ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┐                                      │
                                   │                            │                                      │
-                                  ├──> ablation                                                       ┤
-                                  │                            │                                      │
                                   └──> iterative ×2 ───────────┴──> stability ×2 ─────────────────────┴──> [ report ]
 
-[ feasibility ] (parallel, no dependency)                     ───────────> [ report ]
+[ feasibility ] (parallel, no dependency)────────────────────────────────────────────────────────────────> [ report ]
 ```
 
 **Imbalanced lane** (replaces the schedule lanes — its axis is the popularity
