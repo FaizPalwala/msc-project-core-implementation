@@ -24,7 +24,6 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 pip install -e .
 
 # 5. cuDNN: PyTorch ships its own — no extra install needed for ResNet-18 training
-
 ```
 
 ## Storage Layout
@@ -66,15 +65,15 @@ the CSV** at runtime (600-id vs 750-id needs no code change).
 **Balanced lane** — Slurm dependency graph (edges = `sbatch --dependency`):
 
 ```
-                                  ┌──> canary (after hparam)                                        ┐
-                                  │                                                                 │
-[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┐                                    │
-                                  │                            │                                    │
-                                  ├──> ablation (after hparam)                                      ┤
-                                  │                                                                 │
-                                  └──> iterative ×2 ───────────┴──> stability ×2 ───────────────────┴──> [ report ]
+                                  ┌──> canary                                                         ┐
+                                  │                                                                   │
+[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┐                                      │
+                                  │                            │                                      │
+                                  ├──> ablation                                                       ┤
+                                  │                            │                                      │
+                                  └──> iterative ×2 ───────────┴──> stability ×2 ─────────────────────┴──> [ report ]
 
-[ feasibility ] (parallel, no dependency) ──────────────────────────────────────────────────────────────────> [ report ]
+[ feasibility ] (parallel, no dependency)                     ───────────> [ report ]
 ```
 
 *GPU counts: train 1 GPU; single_shot 1 GPU; hparam 1 GPU × 9 jobs (parallel);
@@ -85,17 +84,17 @@ canary, feasibility 1 GPU each; report CPU.*
 gradient, not time):
 
 ```
-                                  ┌──> canary (after hparam)                                                            ┐
+                                  ┌──> canary ──────────────────────────────────────────────────────────────────────────┐
                                   │                                                                                     │
-[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┬──> equity plots                                        ┐
-                                  │                              │                                                      │
-                                  ├──> ablation (after hparam)                                                          ┤
-                                  │                              │                                                      │
+                                  ├──> ablation ────────────────────────────────────────────────────────────────────────┤
+                                  │                                                                                     │
+[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ────┬──> equity plots ─────────────────────────────────────┤
+                                                                 │                                                      │
                                                                  ├──> per-bin oracles (B) ────┐                         │
                                                                  │                            │                         │
                                                                  └──> Protocol C select ──────┴──> budget sweep (C)─────┴──> [ report ]
 
-[ feasibility ] (parallel, no dependency) ────────────────────────────────────────────────────────────────────────────────> [ report ]
+[ feasibility ] (parallel, no dependency) ─────────────────────────────────────────────────────────────────────────────────> [ report ]
 ```
 
 **Config routing:** only `single_shot` uses default configs. Everything
@@ -104,21 +103,21 @@ ablation, canary unlearning — uses the HP-tuned best configs.  `iterative`
 waits on `single_shot` + `hparam`; `stability` waits on its `iterative` lane +
 `single_shot_best`; the report waits on every lane.
 
-| Stage | Script | GPU | Description |
-|-------|--------|-----|-------------|
-| Train | `slurm_train.sh` | 1 L40S | Original model on retain+forget (train subset) |
-| Single-shot | `slurm_single_shot.sh` | 1 L40S | All methods, all forget IDs, **default configs** + per-identity/demographic CSVs |
-| HP search | `slurm_hparam.sh` | 1 L40S ×9 | **One job per method, all parallel**; each writes `{method}_best_config.json` |
-| Single-shot best | `slurm_single_shot.sh <out> <best_dir>` | 1 L40S | Same eval with **tuned** configs (headline results) |
-| Iterative | `slurm_iterative.sh` | 1 L40S | Schedule protocol (uniform 5×15 or Poisson), **tuned** configs, `--order_seed` |
-| Stability | `slurm_stability.sh` | CPU | 16 publication plots; per-identity + demographic plots read the **top-level aggregated** single-shot CSVs (plots 10/11 were silently skipped before the aggregation fix) |
-| Equity plots (imbalanced) | `slurm_imbalanced_plots.sh` | CPU | 6 per-bin equity plots + Kruskal-Wallis (**after single_shot_best — tuned**; was default-config) |
-| Ablation | `slurm_ablation.sh` | 1 L40S | AdaptiForget component ablation (6 variants); **tuned AdaptiForget base** (after hparam) |
-| Canary | `slurm_canary.sh` | 1 L40S | Pixel-level ground-truth deletion proof (**tuned unlearning**, after hparam) |
-| Report | `slurm_report.sh` | CPU | LaTeX/Markdown synthesis of all results |
-| Per-bin oracles (imbalanced) | `slurm_per_bin_oracle.sh` | 1 L40S | Protocol B: 3 retrains, each excluding only one bin's forgets |
-| Protocol C selection (imbalanced) | `slurm_select_protocol_c.sh` | CPU | 1 best method per category by UF score |
-| Budget sweep (imbalanced) | `slurm_budget_sweep.sh` | 1 L40S | Per-bin distance-to-oracle vs unlearning budget |
+| Stage                             | Script                                    | GPU        | Description                                                                                                                                                                   |
+| --------------------------------- | ----------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Train                             | `slurm_train.sh`                        | 1 L40S     | Original model on retain+forget (train subset)                                                                                                                                |
+| Single-shot                       | `slurm_single_shot.sh`                  | 1 L40S     | All methods, all forget IDs,**default configs** + per-identity/demographic CSVs                                                                                         |
+| HP search                         | `slurm_hparam.sh`                       | 1 L40S ×9 | **One job per method, all parallel**; each writes `{method}_best_config.json`                                                                                         |
+| Single-shot best                  | `slurm_single_shot.sh <out> <best_dir>` | 1 L40S     | Same eval with**tuned** configs (headline results)                                                                                                                      |
+| Iterative                         | `slurm_iterative.sh`                    | 1 L40S     | Schedule protocol (uniform 5×15 or Poisson),**tuned** configs, `--order_seed`                                                                                        |
+| Stability                         | `slurm_stability.sh`                    | CPU        | 16 publication plots; per-identity + demographic plots read the**top-level aggregated** single-shot CSVs (plots 10/11 were silently skipped before the aggregation fix) |
+| Equity plots (imbalanced)         | `slurm_imbalanced_plots.sh`             | CPU        | 6 per-bin equity plots + Kruskal-Wallis (**after single_shot_best — tuned**; was default-config)                                                                       |
+| Ablation                          | `slurm_ablation.sh`                     | 1 L40S     | AdaptiForget component ablation (6 variants);**tuned AdaptiForget base** (after hparam)                                                                                 |
+| Canary                            | `slurm_canary.sh`                       | 1 L40S     | Pixel-level ground-truth deletion proof (**tuned unlearning**, after hparam)                                                                                            |
+| Report                            | `slurm_report.sh`                       | CPU        | LaTeX/Markdown synthesis of all results                                                                                                                                       |
+| Per-bin oracles (imbalanced)      | `slurm_per_bin_oracle.sh`               | 1 L40S     | Protocol B: 3 retrains, each excluding only one bin's forgets                                                                                                                 |
+| Protocol C selection (imbalanced) | `slurm_select_protocol_c.sh`            | CPU        | 1 best method per category by UF score                                                                                                                                        |
+| Budget sweep (imbalanced)         | `slurm_budget_sweep.sh`                 | 1 L40S     | Per-bin distance-to-oracle vs unlearning budget                                                                                                                               |
 
 The imbalanced chain skips iterative + stability (no schedule axis — the
 popularity gradient IS the axis) and instead runs Protocols B + C.
@@ -255,22 +254,21 @@ retain; BROKEN = no response even at 10× (remove/redesign).  The 750-id
 column of the trajectory table comes from the hparam grids.  `--step_scale`
 shrinks base budgets for CPU checks; `--methods` restricts the sweep.
 
-
 ## Resource Estimates
 
-| Stage | GPU | CPUs | Memory | Wall time (full) | Wall time (smoke) |
-|-------|-----|------|--------|-------------------|--------------------|
-| Train | 1 L40S | 8 | 32 GB | 4-6 hr | 30 min |
-| Single-shot | 1 L40S | 8 | 32 GB | 12-24 hr | 1 hr |
-| HP search (per method) | 1 L40S | 8 | 32 GB | 8-12 hr | 1 hr |
-| Single-shot best | 1 L40S | 8 | 32 GB | 12-24 hr | 1 hr |
-| Iterative | 1 L40S | 8 | 32 GB | 24-48 hr | 2 hr |
-| Stability plots | CPU | 4 | 16 GB | 30 min | 5 min |
-| Ablation | 1 L40S | 8 | 32 GB | 2-4 hr | 15 min |
-| Canary | 1 L40S | 8 | 32 GB | 4-6 hr | 20 min |
-| Per-bin oracles (×3) | 1 L40S | 8 | 32 GB | 12-18 hr | — |
-| Budget sweep | 1 L40S | 8 | 32 GB | 8-12 hr | — |
-| **Total pipeline (balanced)** | — | — | — | **~48-72 hr** | **~4 hr** |
+| Stage                               | GPU    | CPUs | Memory | Wall time (full)    | Wall time (smoke) |
+| ----------------------------------- | ------ | ---- | ------ | ------------------- | ----------------- |
+| Train                               | 1 L40S | 8    | 32 GB  | 4-6 hr              | 30 min            |
+| Single-shot                         | 1 L40S | 8    | 32 GB  | 12-24 hr            | 1 hr              |
+| HP search (per method)              | 1 L40S | 8    | 32 GB  | 8-12 hr             | 1 hr              |
+| Single-shot best                    | 1 L40S | 8    | 32 GB  | 12-24 hr            | 1 hr              |
+| Iterative                           | 1 L40S | 8    | 32 GB  | 24-48 hr            | 2 hr              |
+| Stability plots                     | CPU    | 4    | 16 GB  | 30 min              | 5 min             |
+| Ablation                            | 1 L40S | 8    | 32 GB  | 2-4 hr              | 15 min            |
+| Canary                              | 1 L40S | 8    | 32 GB  | 4-6 hr              | 20 min            |
+| Per-bin oracles (×3)               | 1 L40S | 8    | 32 GB  | 12-18 hr            | —                |
+| Budget sweep                        | 1 L40S | 8    | 32 GB  | 8-12 hr             | —                |
+| **Total pipeline (balanced)** | —     | —   | —     | **~48-72 hr** | **~4 hr**   |
 
 Wall-clock note: with 8 parallel HP jobs + single-shot sharing the GPU
 partition, the HP stage's wall time is one method's search (~12 hr), not
@@ -314,22 +312,26 @@ train ───────────────┤                          
 ## Common Issues
 
 ### Out of memory (L40S, 46 GB)
+
 - 224×224 ResNet-18 with batch_size=64: ~12 GB VRAM
 - Reduce `--batch_size` to 32 if running multiple processes per GPU
 - Aire L40S nodes have 3 GPUs; request `--gres=gpu:1` to avoid sharing
 
 ### Checkpoint bloat
+
 - 134 MB per checkpoint (includes optimizer state)
 - 10 methods × 15 iterative steps × checkpoints every 5 = ~30 checkpoints = ~4 GB
 - Set `--checkpoint_every 15` for final-step only, or `0` to disable
 
 ### Job killed (pre-emption)
+
 - Aire may pre-empt long-running GPU jobs on shared nodes
 - All stages use incremental JSONL logging — restart picks up where it left off
 - HP search: re-run with same `--out` dir, completed trials are skipped
 - Iterative: per-step JSONL is append-only, survives partial runs
 
 ### macOS local verification (dev machine)
+
 - Use `PYTHONPATH="" /opt/anaconda3/envs/ml_spec/bin/python3` — the Hermes
   venv leaks site-packages otherwise.
 - The smoke test is slow on CPU (~10 min) but completes — don't kill it early.

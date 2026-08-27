@@ -121,32 +121,32 @@ configs — everything downstream runs with the HP-tuned best configs**).
 and Poisson, run in parallel):
 
 ```
-                                  ┌──> canary (after hparam)                                        ┐
-                                  │                                                                 │
-[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┐                                    │
-                                  │                            │                                    │
-                                  ├──> ablation (after hparam)                                      ┤
-                                  │                                                                 │
-                                  └──> iterative ×2 ───────────┴──> stability ×2 ───────────────────┴──> [ report ]
+                                  ┌──> canary                                                         ┐
+                                  │                                                                   │
+[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┐                                      │
+                                  │                            │                                      │
+                                  ├──> ablation                                                       ┤
+                                  │                            │                                      │
+                                  └──> iterative ×2 ───────────┴──> stability ×2 ─────────────────────┴──> [ report ]
 
-[ feasibility ] (parallel, no dependency) ──────────────────────────────────────────────────────────────────> [ report ]
+[ feasibility ] (parallel, no dependency)                     ───────────> [ report ]
 ```
 
 **Imbalanced lane** (replaces the schedule lanes — its axis is the popularity
 gradient, not time):
 
 ```
-                                  ┌──> canary (after hparam)                                                            ┐
+                                  ┌──> canary ──────────────────────────────────────────────────────────────────────────┐
                                   │                                                                                     │
-[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ──┬──> equity plots                                        ┐
-                                  │                              │                                                      │
-                                  ├──> ablation (after hparam)                                                          ┤
-                                  │                              │                                                      │
+                                  ├──> ablation ────────────────────────────────────────────────────────────────────────┤
+                                  │                                                                                     │
+[ train ] ──> single_shot ──> hparam ×9 ──> single_shot_best ────┬──> equity plots ─────────────────────────────────────┤
+                                                                 │                                                      │
                                                                  ├──> per-bin oracles (B) ────┐                         │
                                                                  │                            │                         │
                                                                  └──> Protocol C select ──────┴──> budget sweep (C)─────┴──> [ report ]
 
-[ feasibility ] (parallel, no dependency) ────────────────────────────────────────────────────────────────────────────────> [ report ]
+[ feasibility ] (parallel, no dependency) ─────────────────────────────────────────────────────────────────────────────────> [ report ]
 ```
 
 *Dependency semantics (from `hpc_full_pipeline.sh`): `single_shot` and
