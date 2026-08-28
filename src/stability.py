@@ -423,9 +423,7 @@ def plot_pareto(df, out_dir: Path):
     ax.set_title(f"Pareto Trajectory: Utility vs. Forgetting over {max_step} steps\n"
                  "(lines = step path; bold marker = final step)",
                  fontweight="bold")
-    ax.legend(loc="lower right", fontsize=8, ncol=2)
-    if ax.collections:
-        plt.colorbar(ax.collections[0], ax=ax, label="Step")
+    ax.legend(loc="upper left", fontsize=8, ncol=2)
     fig.tight_layout()
     fig.savefig(out_dir / "06_pareto.png", bbox_inches="tight")
     plt.close(fig)
