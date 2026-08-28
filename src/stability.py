@@ -360,11 +360,20 @@ def hypervolume(
 
 
 def plot_pareto(df, out_dir: Path):
-    """Pareto scatter + computed frontier line + hypervolume annotation."""
+    """Pareto trajectory: per-method step path + global frontier envelope.
+
+    Option C design: colour = method throughout (legend carries identity,
+    no label storm); each method's 16 steps are CONNECTED as a trajectory
+    line (the path through utility/forgetting space IS the story — FT's
+    climb vs GA's divergence vs the collapse family's flatline); markers
+    at steps {1, 5, 10, 15}; bold marker at the final step; the global
+    Pareto front + hypervolume close the figure.
+    """
     fig, ax = plt.subplots(figsize=(8, 6))
     methods = sorted(df["method"].unique())
+    marker_steps = {1, 5, 10, 15}
+    max_step = int(df["step"].max())
 
-    frontier_x, frontier_y = [], []
     all_x, all_y = [], []
 
     for method in methods:
@@ -374,27 +383,32 @@ def plot_pareto(df, out_dir: Path):
         s = _style(method)
         x = sub["mia_mean_auc"].values
         y = sub["retain_acc"].values
+        steps = sub["step"].values
         all_x.extend(x)
         all_y.extend(y)
-        ax.scatter(x, y, c=sub["step"], cmap="Blues", vmin=1,
-                   vmax=df["step"].max(), alpha=0.75,
-                   edgecolors=s["color"], linewidths=1.5,
-                   marker=s["marker"], s=60, label=s["label"])
 
-        # Frontier for this method (its own steps)
-        idx = pareto_frontier(x, y)
-        frontier_x.extend(x[idx])
-        frontier_y.extend(y[idx])
+        # trajectory line through the steps (the path, not a scatter storm)
+        ax.plot(x, y, color=s["color"], ls="-", lw=1.3, alpha=0.75,
+                label=s["label"], zorder=2)
+        # selected step markers
+        for ms, mx, my in zip(steps, x, y):
+            if int(ms) in marker_steps:
+                ax.scatter(mx, my, color=s["color"], marker=s["marker"],
+                           s=45, edgecolors="white", linewidths=0.5,
+                           zorder=3)
+        # bold final-step marker
+        ax.scatter(x[-1], y[-1], color=s["color"], marker=s["marker"],
+                   s=90, edgecolors="white", linewidths=1.0, zorder=4)
 
-    # Global frontier across all points
+    # Global frontier across all points (the achievable envelope)
     if all_x:
         gx = np.array(all_x)
         gy = np.array(all_y)
         g_idx = pareto_frontier(gx, gy)
         fx = np.sort(gx[g_idx])
         fy = gy[g_idx][np.argsort(gx[g_idx])]
-        ax.plot(fx, fy, color="#222", lw=2.5, ls="-", alpha=0.8,
-                label="Pareto frontier")
+        ax.plot(fx, fy, color="#222", lw=2.0, ls="--", alpha=0.8,
+                label="Pareto frontier", zorder=5)
 
         # Hypervolume
         hv = hypervolume(gx, gy, ref_x=gx.max(), ref_y=gy.min())
@@ -406,7 +420,8 @@ def plot_pareto(df, out_dir: Path):
                label="Perfect MIA (0.50)")
     ax.set_xlabel("MIA AUC (← better forgetting)")
     ax.set_ylabel("Retain Accuracy (↑ better)")
-    ax.set_title("Pareto Frontier: Utility vs. Forgetting (with hypervolume)",
+    ax.set_title(f"Pareto Trajectory: Utility vs. Forgetting over {max_step} steps\n"
+                 "(lines = step path; bold marker = final step)",
                  fontweight="bold")
     ax.legend(loc="lower right", fontsize=8, ncol=2)
     if ax.collections:
@@ -527,7 +542,6 @@ def plot_total_time_bar(df, out_dir: Path, oracle_time_s: float | None = None):
     fig, ax = plt.subplots(figsize=(9, max(4, 0.5 * len(methods) + 2)))
     colors = [_style(methods[i])["color"] for i in order]
     bars = ax.barh(sorted_methods, sorted_totals, color=colors, alpha=0.85)
-    method_by_bar = {bar: methods[i] for bar, i in zip(bars, order)}
 
     # Log axis: bars span 98–952 s but the iterative-oracle estimate sits at
     # ~10,800 s (15× single retrain) — a linear axis that fits both would
@@ -535,48 +549,26 @@ def plot_total_time_bar(df, out_dir: Path, oracle_time_s: float | None = None):
     # the two reference lines readable.
     ax.set_xscale("log")
     # no_unlearning has total 0.0s — log10(0) = -inf would break the axis
-    # floor. Use the smallest POSITIVE total for lo; the 0-bar renders at
-    # the axis edge (log axes can't show 0), which is the honest picture
-    # (no-unlearning does nothing → no time).
+    # floor. Floor one full DECADE below the smallest positive total: with
+    # floor == min's decade (poisson min 100.6 → lo=100) the shortest bars
+    # collapse into the left 1-3% and their labels stack on each other and
+    # the y-axis names. One decade down (poisson → lo=10) keeps every bar
+    # ≥ ~32% of the axis width.
     pos_totals = [t for t in sorted_totals if t > 0]
-    lo = 10 ** np.floor(np.log10(min(pos_totals))) if pos_totals else 1.0
+    lo = 10 ** (np.floor(np.log10(min(pos_totals))) - 1) if pos_totals else 1.0
     top = max((oracle_time_s or 0) * 16, max(sorted_totals))
     hi = top * 1.15
     ax.set_xlim(lo, hi)
 
-    # Annotate values: inside the bar when it fits, outside otherwise.
-    # A linear offset (tip + const) collides with decade tick labels on the
-    # log axis (SRL 98s ≈ 10², FT 952s ≈ 10³); a log-space offset scales
-    # with the bar, so labels never sit on a tick. White text is invisible
-    # on short bars (label wider than the bar) and on pale fills
-    # (AdaptiForget #a5d6a7, MSG-KD #81c784) — use contrast-aware colour
-    # and place outside when the bar is too narrow.
-    renderer = fig.canvas.get_renderer()
+    # Annotate values AFTER the bar tip in black (consistent style across
+    # all bars — white-inside is invisible on short/pale bars). Offset in
+    # log space (tip × 1.03) so labels never sit on decade ticks. The
+    # 0.0 bar (No-U) has no width — place its label at the axis floor.
     for bar, val in zip(bars, sorted_totals):
         label = f"{val/60:.1f} min" if val > 0 else "0.0 min"
-        if val <= 0:
-            ax.text(bar.get_width() + hi * 0.01, bar.get_y() + bar.get_height() / 2,
-                    label, va="center", fontsize=9, color="#111111")
-            continue
-        # Does the label fit inside the bar? Compare text width (px) to bar
-        # width (px) — a short bar on a log axis can be narrower than its
-        # own label.
-        txt = ax.text(0, 0, label, fontsize=9, fontweight="bold")
-        tw = txt.get_window_extent(renderer=renderer).width
-        bw = bar.get_window_extent(renderer=renderer).width
-        txt.remove()
-        # contrast-aware text colour: luminance of the bar fill
-        c = _style(method_by_bar[bar])["color"] if method_by_bar else "#888888"
-        lum = 0.299 * int(c[1:3], 16) + 0.587 * int(c[3:5], 16) + 0.114 * int(c[5:7], 16)
-        tcol = "#111111" if lum > 150 else "white"
-        if tw < bw * 0.95:
-            ax.text(bar.get_width() * 0.97, bar.get_y() + bar.get_height() / 2,
-                    label, va="center", ha="right", fontsize=9,
-                    color=tcol, fontweight="bold")
-        else:
-            # too narrow: place OUTSIDE just right of the tip, dark text
-            ax.text(bar.get_width() * 1.03, bar.get_y() + bar.get_height() / 2,
-                    label, va="center", ha="left", fontsize=9, color="#111111")
+        xpos = bar.get_width() * 1.03 if val > 0 else 10 ** (np.log10(lo) + 0.02)
+        ax.text(xpos, bar.get_y() + bar.get_height() / 2,
+                label, va="center", ha="left", fontsize=9, color="#111111")
 
     ax.set_xlabel("Total cumulative time (s, log scale)")
     ax.set_title("Total Unlearning Time by Method\n(lower = cheaper to deploy)",

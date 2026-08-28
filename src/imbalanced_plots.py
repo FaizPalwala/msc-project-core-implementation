@@ -395,26 +395,39 @@ def plot_forget_utility_frontier(aggregated: dict, out_dir: Path) -> None:
                    s=70, edgecolors="white", linewidth=0.5,
                    label=st["label"])
 
-    # Pareto front envelope: non-dominated points sorted by retain (the
-    # frontier is the science — a step line, not a label storm).
-    dom = set()
-    for i, (ri, fi, mi, bi) in enumerate(all_pts):
-        for j, (rj, fj, mj, bj) in enumerate(all_pts):
-            if i != j and rj >= ri - 1e-9 and fj <= fi + 1e-9 \
-               and (rj > ri + 1e-9 or fj < fi - 1e-9):
-                dom.add(i)
-                break
-    front = sorted([p for i, p in enumerate(all_pts) if i not in dom],
-                   key=lambda p: -p[0])
-    if front:
-        fx = [p[0] for p in front]
-        fy = [p[1] for p in front]
-        ax.step(fx, fy, where="post", color="#111111", ls="--", lw=1.2,
-                label="Pareto front", alpha=0.7)
+    # Per-bin Pareto front envelopes: one per popularity bin. Bins are
+    # different difficulty regimes, so a single mixed-bin frontier is
+    # semantically muddy — the per-bin envelopes show the achievable
+    # frontier DEGRADING as popularity rises (the equity claim itself).
+    for bin_name in BINS:
+        pts = [p for p in all_pts if p[3] == bin_name]
+        if len(pts) < 2:
+            continue
+        dom = set()
+        for i, (ri, fi, _, _) in enumerate(pts):
+            for j, (rj, fj, _, _) in enumerate(pts):
+                if i != j and rj >= ri - 1e-9 and fj <= fi + 1e-9 \
+                   and (rj > ri + 1e-9 or fj < fi - 1e-9):
+                    dom.add(i)
+                    break
+        front = sorted([p for i, p in enumerate(pts) if i not in dom],
+                       key=lambda p: -p[0])
+        if len(front) >= 2:
+            fx = [p[0] for p in front]
+            fy = [p[1] for p in front]
+            ax.step(fx, fy, where="post", color=BIN_COLOURS[bin_name],
+                    ls="--", lw=1.5, alpha=0.8,
+                    label=f"Pareto front ({bin_name} bin)")
 
     ax.set_xlabel("Retain‑holdout identity accuracy (↑ better)")
     ax.set_ylabel("Forget‑holdout identity accuracy (↓ better)")
-    ax.set_title("Forgetting‑Utility Frontier\n(colour = method; marker = popularity bin; dashed = Pareto front)")
+    # Retain is pinned at 0.998–0.999 for every method (SRL 0.755 is the
+    # lone outlier) — a 0–1 x-axis flattens the plot into a vertical band
+    # and hides the per-bin frontier heights. Zoom so the envelope levels
+    # (low 0.043 / medium 0.431 / high 0.975) read as distinct bands.
+    ax.set_xlim(0.70, 1.005)
+    ax.set_ylim(-0.02, 1.05)
+    ax.set_title("Forgetting-Utility Frontier\n(colour = method; marker = bin; dashed = per-bin Pareto front)")
     ax.legend(fontsize=8, ncol=2, loc="lower right", framealpha=0.9)
     ax.axhline(0.05, color="green", linestyle="--", linewidth=0.8, alpha=0.4)
     ax.annotate("strong forgetting", xy=(0.02, 0.055), fontsize=8, color="green", alpha=0.6)
