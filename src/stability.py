@@ -522,14 +522,36 @@ def plot_total_time_bar(df, out_dir: Path, oracle_time_s: float | None = None):
         ax.text(bar.get_width() + max(sorted_totals) * 0.01, bar.get_y() + bar.get_height() / 2,
                 f"{val/60:.1f} min", va="center", fontsize=9)
 
-    ax.set_xlabel("Total cumulative time (s)")
+    ax.set_xlabel("Total cumulative time (s, log scale)")
     ax.set_title("Total Unlearning Time by Method\n(lower = cheaper to deploy)",
                  fontweight="bold", pad=10)
-    ax.set_xlim(0, max(max(sorted_totals) * 1.15, (oracle_time_s or 0) * 1.08))
+    # Log axis: bars span 98–952 s but the iterative-oracle estimate sits at
+    # ~10,800 s (15× single retrain) — a linear axis that fits both would
+    # crush the bars into the left 8%. Log keeps the method comparison and
+    # the two reference lines readable.
+    ax.set_xscale("log")
+    # no_unlearning has total 0.0s — log10(0) = -inf would break the axis
+    # floor. Use the smallest POSITIVE total for lo; the 0-bar renders at
+    # the axis edge (log axes can't show 0), which is the honest picture
+    # (no-unlearning does nothing → no time).
+    pos_totals = [t for t in sorted_totals if t > 0]
+    lo = 10 ** np.floor(np.log10(min(pos_totals))) if pos_totals else 1.0
+    top = max((oracle_time_s or 0) * 16, max(sorted_totals))
+    hi = top * 1.15
+    ax.set_xlim(lo, hi)
     if oracle_time_s is not None:
+        n_steps = int(df["step"].max()) if "step" in df.columns else 15
         ax.axvline(oracle_time_s, color=ORACLE["color"], ls=ORACLE["ls"], lw=1.8,
                    alpha=0.8,
-                   label=f"Retrain oracle (single-shot): {oracle_time_s/60:.1f} min")
+                   label=f"Single retrain (oracle): {oracle_time_s/60:.1f} min")
+        # The oracle never ran iteratively (order-independent, §9) — but if
+        # it had (retrain from scratch at each step), its cumulative time at
+        # the 15-step horizon ≈ n_steps × one retrain. This is the honest
+        # comparison against the bars, which are 15-step cumulative totals.
+        est = n_steps * oracle_time_s
+        ax.axvline(est, color=ORACLE["color"], ls=":", lw=1.8, alpha=0.7,
+                   label=f"Iterative-oracle estimate ({n_steps}× retrain): "
+                         f"{est/3600:.1f} h")
         ax.legend(loc="lower right", fontsize=9)
     fig.tight_layout()
     fig.savefig(out_dir / "14_total_time_bar.png", bbox_inches="tight")
