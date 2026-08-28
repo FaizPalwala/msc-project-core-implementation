@@ -410,11 +410,11 @@ def plot_pareto(df, out_dir: Path):
         ax.plot(fx, fy, color="#222", lw=2.0, ls="--", alpha=0.8,
                 label="Pareto frontier", zorder=5)
 
-        # Hypervolume
+        # Hypervolume — sits ABOVE the lower-left legend
         hv = hypervolume(gx, gy, ref_x=gx.max(), ref_y=gy.min())
-        ax.text(0.02, 0.02, f"Hypervolume: {hv:.4f}",
+        ax.text(0.02, 0.30, f"Hypervolume: {hv:.4f}",
                 transform=ax.transAxes, fontsize=10,
-                bbox=dict(boxstyle="round", fc="white", alpha=0.8))
+                bbox=dict(boxstyle="round", fc="white", alpha=0.9))
 
     ax.axvline(0.50, color=ORACLE["color"], ls=ORACLE["ls"], lw=1.5, alpha=0.7,
                label="Perfect MIA (0.50)")
@@ -423,7 +423,7 @@ def plot_pareto(df, out_dir: Path):
     ax.set_title(f"Pareto Trajectory: Utility vs. Forgetting over {max_step} steps\n"
                  "(lines = step path; bold marker = final step)",
                  fontweight="bold")
-    ax.legend(loc="upper left", fontsize=8, ncol=2)
+    ax.legend(loc="lower left", fontsize=8, ncol=2)
     fig.tight_layout()
     fig.savefig(out_dir / "06_pareto.png", bbox_inches="tight")
     plt.close(fig)
