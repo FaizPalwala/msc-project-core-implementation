@@ -547,11 +547,14 @@ def plot_per_identity_signatures(
     # CSV method labels carry config markers ("AdaptiForget ‡", "MSG-KD †",
     # "Retrain Oracle*") — strip them and match on the clean label prefix.
     def _key_from_label(label: str) -> str | None:
-        bare = label.split()[0].replace("*", "").replace("†", "").replace("‡", "")
+        # Strip config markers (‡ † *) AND the trailing space left behind
+        # ("Budget-Scaled GA ‡" → "Budget-Scaled GA" — an unstripped compare
+        # dropped the whole method → empty panel).
+        clean = label.replace("‡", "").replace("†", "").replace("*", "").strip()
         for k, v in METHOD_STYLES.items():
-            if bare == v["label"] or label.replace("‡", "").replace("†", "").replace("*", "") == v["label"]:
+            if clean == v["label"] or clean.split()[0] == v["label"]:
                 return k
-        if "Retrain" in label:
+        if "Retrain" in clean:
             return "retrain"
         return None
 
@@ -580,10 +583,13 @@ def plot_per_identity_signatures(
             ax.legend(loc="lower right", fontsize=7)
         ax.set_title(_style(method_key)["label"], fontsize=10)
         ax.set_ylabel("MIA AUC")
-        # Full 0–1 range: the whole point is *which* identities leaked
-        # (red > 0.55) vs forgotten (green < 0.55). A 0.40 floor clipped
-        # every erasing method's bars off-axis (FT max 0.0024 → blank panel).
-        ax.set_ylim(0.0, 1.0)
+        # Log y-axis: per-identity MIA spans 4 orders of magnitude
+        # (FT/CT at 1e-4 → GA/NG+ at ~0.8). A linear 0–1 axis renders
+        # fully-erased methods as invisible 0.2%-tall bars (FT max 0.0024
+        # → panel looks blank). Log keeps the red/green leak threshold
+        # (0.55) meaningful while showing the erasure magnitude.
+        ax.set_yscale("log")
+        ax.set_ylim(5e-5, 1.05)
 
     for ax in axes[len(methods):]:
         ax.set_visible(False)
