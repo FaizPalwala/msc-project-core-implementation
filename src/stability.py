@@ -517,14 +517,7 @@ def plot_total_time_bar(df, out_dir: Path, oracle_time_s: float | None = None):
     fig, ax = plt.subplots(figsize=(9, max(4, 0.5 * len(methods) + 2)))
     colors = [_style(methods[i])["color"] for i in order]
     bars = ax.barh(sorted_methods, sorted_totals, color=colors, alpha=0.85)
-    # Annotate values
-    for bar, val in zip(bars, sorted_totals):
-        ax.text(bar.get_width() + max(sorted_totals) * 0.01, bar.get_y() + bar.get_height() / 2,
-                f"{val/60:.1f} min", va="center", fontsize=9)
 
-    ax.set_xlabel("Total cumulative time (s, log scale)")
-    ax.set_title("Total Unlearning Time by Method\n(lower = cheaper to deploy)",
-                 fontweight="bold", pad=10)
     # Log axis: bars span 98–952 s but the iterative-oracle estimate sits at
     # ~10,800 s (15× single retrain) — a linear axis that fits both would
     # crush the bars into the left 8%. Log keeps the method comparison and
@@ -539,6 +532,23 @@ def plot_total_time_bar(df, out_dir: Path, oracle_time_s: float | None = None):
     top = max((oracle_time_s or 0) * 16, max(sorted_totals))
     hi = top * 1.15
     ax.set_xlim(lo, hi)
+
+    # Annotate values INSIDE each bar (right-aligned at ~97% of the tip).
+    # A linear offset (tip + const) collides with decade tick labels on the
+    # log axis (SRL 98s ≈ 10², FT 952s ≈ 10³); a log-space offset scales
+    # with the bar, so labels never sit on a tick.
+    for bar, val in zip(bars, sorted_totals):
+        if val <= 0:
+            ax.text(bar.get_width() + hi * 0.01, bar.get_y() + bar.get_height() / 2,
+                    "0.0 min", va="center", fontsize=9)
+        else:
+            ax.text(bar.get_width() * 0.97, bar.get_y() + bar.get_height() / 2,
+                    f"{val/60:.1f} min", va="center", ha="right", fontsize=9,
+                    color="white", fontweight="bold")
+
+    ax.set_xlabel("Total cumulative time (s, log scale)")
+    ax.set_title("Total Unlearning Time by Method\n(lower = cheaper to deploy)",
+                 fontweight="bold", pad=10)
     if oracle_time_s is not None:
         n_steps = int(df["step"].max()) if "step" in df.columns else 15
         ax.axvline(oracle_time_s, color=ORACLE["color"], ls=ORACLE["ls"], lw=1.8,
