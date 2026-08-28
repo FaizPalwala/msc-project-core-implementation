@@ -81,6 +81,7 @@ SCALE_POLICY = {
     "mia_auc":            ((0.0, 1.05),   False),
     "forget_advantage":   ((-0.02, 0.55), False),
     "fraction_leaked":    ((-0.02, 1.05), False),
+    "forget_train_gap":   ((-0.05, 0.55), False),
     "model_drift":        (None,          True),
     "step_time_s":        (None,          True),
     "cumulative_time_s":  (None,          True),
@@ -204,11 +205,14 @@ def _plot_vs_step(df, metric, ylabel, title, out_file,
 def _plot_subgrouped(df, metric, ylabel, out_file,
                      target_line=None, target_label=None,
                      style_kwargs: dict | None = None,
-                     tag_letters=("a", "b", "c")):
+                     tag_letters=("a", "b", "c"),
+                     extra_lines: list[tuple] | None = None):
     """3 stacked panels — one per registry group (G1/G2/G3, B2).
 
     Each panel draws its group's methods + the oracle target line; all
     panels SHARE the metric's y-limits (B1) so they read side-by-side.
+    extra_lines: [(y, color, label), ...] — additional threshold lines
+    drawn in every panel (e.g. the forget-train-gap 0.10/0.15 bands).
     """
     fig, axes = plt.subplots(3, 1, figsize=(8, 9.5), sharex=True)
     all_steps = sorted(df["step"].unique())
@@ -226,6 +230,8 @@ def _plot_subgrouped(df, metric, ylabel, out_file,
             ax.axhline(target_line, color=ORACLE["color"], ls=ORACLE["ls"],
                        lw=1.5, label=target_label or f"Target ({target_line})",
                        alpha=0.7)
+        for y, c, lbl in (extra_lines or []):
+            ax.axhline(y, color=c, ls="--", lw=1.2, alpha=0.6, label=lbl)
         _apply_scale(ax, metric)
         ax.text(-0.06, 1.02, f"({tag})", transform=ax.transAxes,
                 fontsize=10, fontweight="bold", va="bottom", ha="right")
@@ -675,6 +681,67 @@ def plot_per_identity_signatures(
     logger.info("  Saved: 10_identity_signatures.png")
 
 
+def plot_per_identity_subgrouped(per_id_csv: str | None, out_dir: Path) -> None:
+    """Per-identity signatures split into 3 subgroup panels (G1/G2/G3).
+
+    App D fig D.5: each panel shows the per-identity MIA AUC bars for that
+    group's methods (colour = method), sorted desc, with the leak threshold
+    (0.55) and the oracle mean as reference lines.
+    """
+    if per_id_csv is None or not Path(per_id_csv).exists():
+        logger.info("  [SKIP] 10_subgroups — no per-identity data")
+        return
+    df = pd.read_csv(per_id_csv)
+
+    def _key(label: str) -> str | None:
+        bare = label.split()[0].replace("*", "").replace("†", "").replace("‡", "").strip()
+        for k, v in METHOD_STYLES.items():
+            if bare == v["label"] or bare == k:
+                return k
+        return None
+
+    df["method_key"] = df["method"].map(_key)
+    df = df[df["method_key"].notna() & (df["method_key"] != "no_unlearning")]
+    if df.empty:
+        logger.info("  [SKIP] 10_subgroups — no matched methods")
+        return
+
+    oracle_mean = None
+    for k, v in df.groupby("method_key"):
+        if k == "retrain":
+            oracle_mean = v["mia_auc"].mean()
+
+    fig, axes = plt.subplots(3, 1, figsize=(8, 9.5))
+    for ax, (gname, members), tag in zip(axes, GROUPS, ("a", "b", "c")):
+        sub = df[df["method_key"].isin(members)]
+        if sub.empty:
+            ax.set_visible(False)
+            continue
+        for method in members:
+            g = sub[sub["method_key"] == method].sort_values("mia_auc", ascending=False)
+            if g.empty:
+                continue
+            s = _style(method)
+            ax.bar(range(len(g)), g["mia_auc"],
+                   color=s["color"], alpha=0.75, width=0.8,
+                   label=s["label"])
+        ax.axhline(0.55, color="#d32f2f", ls="--", lw=1.2, alpha=0.7,
+                   label="Leak threshold (0.55)")
+        if oracle_mean is not None:
+            ax.axhline(oracle_mean, color=ORACLE["color"], ls=ORACLE["ls"],
+                       lw=1.5, alpha=0.7, label="Retrain oracle (mean)")
+        ax.set_ylim(0, 1.0)
+        ax.set_ylabel("MIA AUC", fontsize=9)
+        ax.set_title(f"({tag}) {gname}", fontsize=10, loc="left")
+        ax.legend(fontsize=8, ncol=2)
+    axes[-1].set_xlabel("Identity (sorted by MIA AUC)")
+    fig.tight_layout()
+    fig.savefig(out_dir / "subgroups" / "10_identity_signatures_subgroups.png",
+                bbox_inches="tight")
+    plt.close(fig)
+    logger.info("  Saved: 10_identity_signatures_subgroups.png")
+
+
 def plot_demographic_heatmap(
     demog_csv: str | None,
     out_dir: Path,
@@ -753,6 +820,87 @@ def plot_phase_space(
     fig.savefig(out_dir / "12_phase_space.png", bbox_inches="tight")
     plt.close(fig)
     logger.info("  Saved: 12_phase_space.png")
+
+
+def plot_phase_space_subgrouped(df: pd.DataFrame, out_dir: Path) -> None:
+    """Phase-space trajectories split into 3 subgroup panels (G1/G2/G3).
+
+    App D fig D.4: each panel shows its group's forget-vs-utility path
+    (MIA → vs retain ↑, arrows = step progression) + perfect-forgetting
+    line.
+    """
+    if "mia_mean_auc" not in df.columns or "retain_acc" not in df.columns:
+        logger.info("  [SKIP] 12_subgroups — missing required columns")
+        return
+    fig, axes = plt.subplots(3, 1, figsize=(8, 9.5))
+    for ax, (gname, members), tag in zip(axes, GROUPS, ("a", "b", "c")):
+        sub = df[df["method"].isin(members)]
+        if sub.empty:
+            ax.set_visible(False)
+            continue
+        for method in members:
+            msub = sub[sub["method"] == method].sort_values("step")
+            if len(msub) < 2:
+                continue
+            s = _style(method)
+            x = msub["mia_mean_auc"].values
+            y = msub["retain_acc"].values
+            ax.scatter(x, y, color=s["color"], marker=s["marker"],
+                       s=40, alpha=0.7, label=s["label"])
+            for i in range(len(x) - 1):
+                ax.annotate("", xy=(x[i+1], y[i+1]), xytext=(x[i], y[i]),
+                            arrowprops=dict(arrowstyle="->", color=s["color"],
+                                            lw=1.5, alpha=0.4))
+        ax.axvline(0.50, color=ORACLE["color"], ls=ORACLE["ls"], lw=1.5,
+                   alpha=0.7, label="Perfect forgetting")
+        ax.set_xlabel("MIA AUC →" if ax is axes[-1] else "")
+        ax.set_ylabel("Retain Accuracy →", fontsize=9)
+        ax.set_title(f"({tag}) {gname}", fontsize=10, loc="left")
+        ax.invert_xaxis()
+        ax.legend(fontsize=8, ncol=2)
+    fig.tight_layout()
+    fig.savefig(out_dir / "subgroups" / "12_phase_space_subgroups.png",
+                bbox_inches="tight")
+    plt.close(fig)
+    logger.info("  Saved: 12_phase_space_subgroups.png")
+
+
+def plot_total_time_subgrouped(df: pd.DataFrame, out_dir: Path,
+                               oracle_time_s: float | None = None) -> None:
+    """Total wall-clock per method, split into 3 subgroup panels.
+
+    Each panel shows its group's methods as a horizontal bar chart with
+    the retrain-oracle reference line (cheaper-than-retraining threshold).
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(8, 9.5))
+    for ax, (gname, members), tag in zip(axes, GROUPS, ("a", "b", "c")):
+        sub = df[df["method"].isin(members)]
+        present = [m for m in members if m in set(sub["method"])]
+        if not present:
+            ax.set_visible(False)
+            continue
+        totals = []
+        for m in present:
+            msub = sub[sub["method"] == m]
+            totals.append(float(msub["cumulative_time_s"].max()))
+        colours = [_style(m)["color"] for m in present]
+        ypos = np.arange(len(present))
+        ax.barh(ypos, totals, color=colours, alpha=0.85)
+        ax.set_yticks(ypos)
+        ax.set_yticklabels([_style(m)["label"] for m in present], fontsize=9)
+        for i, (m, t) in enumerate(zip(present, totals)):
+            ax.text(t * 1.03, i, f"{t/60:.1f} min", va="center", fontsize=8)
+        if oracle_time_s is not None:
+            ax.axvline(oracle_time_s, color=ORACLE["color"], ls=ORACLE["ls"],
+                       lw=1.8, alpha=0.8, label="Retrain oracle (single-shot)")
+        ax.set_xlabel("Total cumulative time (s)" if ax is axes[-1] else "")
+        ax.set_title(f"({tag}) {gname}", fontsize=10, loc="left")
+        ax.legend(fontsize=8, loc="lower right")
+    fig.tight_layout()
+    fig.savefig(out_dir / "subgroups" / "14_total_time_bar_subgroups.png",
+                bbox_inches="tight")
+    plt.close(fig)
+    logger.info("  Saved: 14_total_time_bar_subgroups.png")
 
 
 def plot_fraction_leaked(df: pd.DataFrame, out_dir: Path) -> None:
@@ -908,6 +1056,11 @@ def run_stability_analysis(
         logger.error("  No data after filtering — check --methods/--steps values")
         return
 
+    # Derived column for the forget-train/holdout gap (plot 15 + its
+    # subgrouped twin): gap = step_forget_train_acc − step_forget_acc.
+    if "step_forget_train_acc" in df.columns and "step_forget_acc" in df.columns:
+        df["forget_train_gap"] = df["step_forget_train_acc"] - df["step_forget_acc"]
+
     logger.info(f"  Methods: {sorted(df['method'].unique())}")
     logger.info(f"  Steps:   {sorted(df['step'].unique())}")
     logger.info(f"  Rows:    {len(df)}")
@@ -951,6 +1104,15 @@ def run_stability_analysis(
         _plot_subgrouped(df, metric, ylabel,
                          sub_dir / f"{name}_subgroups.png",
                          target_line=tline, target_label=tlabel)
+
+    # Non vs-step subgrouped panels (App D consistency: 10/12/14/15)
+    _plot_subgrouped(df, "forget_train_gap", "Forget-train − Forget-holdout acc",
+                     sub_dir / "15_forget_train_gap_subgroups.png",
+                     extra_lines=[(0.10, "green", "gap ≤ 0.10 (genuine)"),
+                                  (0.15, "red", "gap ≥ 0.15 (overfit)")])
+    plot_per_identity_subgrouped(per_id_csv, out_path)
+    plot_phase_space_subgrouped(df, out_path)
+    plot_total_time_subgrouped(df, out_path, oracle_time_s=oracle_time_s)
 
     # ── Thesis pairs (B3) — written only with --pair ─────────────────────
     if pair:

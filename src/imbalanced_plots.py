@@ -549,8 +549,49 @@ def main() -> None:
                      BIN_SHARED_LIMS["mia"],
                      extra_lines=[(0.50, "chance", "gray"),
                                   (0.55, "leak threshold", "red")])
+    _subgrouped_gap_bars(agg, sub_dir, "03_forget_train_gap_subgroups.png")
 
     logger.info(f"\n[OK] {len(list(out_dir.glob('*.png')))} plots → {out_dir}")
+
+
+def _subgrouped_gap_bars(aggregated, out_dir: Path, fname: str) -> None:
+    """3-panel per-method forget-train gap bars (G1/G2/G3).
+
+    The gap (forget-train acc − forget-holdout acc) is per-method, not
+    per-bin (train-side accuracy isn't bin-stratified), so the subgrouped
+    version is method bars per group + the 0.10/0.15 threshold lines.
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(8, 9.5))
+    for ax, (gname, members), tag in zip(axes, GROUPS, ("a", "b", "c")):
+        gaps = {}
+        for m in members:
+            if m not in aggregated:
+                continue
+            f_hold = aggregated[m].get("forget_id_acc")
+            f_train = aggregated[m].get("forget_train_id_acc")
+            if f_hold is not None and f_train is not None:
+                gaps[m] = float(f_train) - float(f_hold)
+        if not gaps:
+            ax.set_visible(False)
+            continue
+        names = [method_label(m) for m in gaps]
+        values = list(gaps.values())
+        colours = [_style(m)["color"] for m in gaps]
+        ax.bar(names, values, color=colours, edgecolor="white", linewidth=0.5)
+        ax.axhline(0.10, color="green", ls="--", lw=0.8, alpha=0.6,
+                   label="≤ 0.10 genuine")
+        ax.axhline(0.15, color="red", ls="--", lw=0.8, alpha=0.5,
+                   label="≥ 0.15 overfit")
+        ax.set_ylim(min(0, min(values) - 0.05), max(0.2, max(values) + 0.05))
+        ax.set_ylabel("Forget-train − Forget-holdout gap", fontsize=9)
+        ax.set_title(f"({tag}) {gname}", fontsize=10, loc="left")
+        ax.tick_params(axis="x", rotation=30)
+        ax.legend(fontsize=8)
+    axes[-1].set_xlabel("Method")
+    fig.tight_layout()
+    fig.savefig(out_dir / fname, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"  → {out_dir / fname} (3 subgroup panels)")
 
 
 if __name__ == "__main__":
