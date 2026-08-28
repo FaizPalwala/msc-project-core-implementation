@@ -420,22 +420,32 @@ def plot_pareto(df, out_dir: Path):
 def plot_heatmap(df, out_dir: Path):
     methods = sorted(df["method"].unique())
     steps = sorted(df["step"].unique())
+    # DIRECTIONAL advantage: 0.5 − MIA_AUC. Positive = below-chance MIA
+    # (attacker CANNOT find forget members = erased, green); negative =
+    # above-chance (leaked, red). The old |AUC−0.5| rendered No-U (adv 0.02,
+    # does nothing) green and FT (adv 0.499, actually erased) red — the
+    # symmetric metric cannot distinguish "erased" from "leaked".
     matrix = np.full((len(methods), len(steps)), np.nan)
     for i, m in enumerate(methods):
         for j, s in enumerate(steps):
             sub = df[(df["method"] == m) & (df["step"] == s)]
-            if "forget_advantage" in sub.columns and len(sub):
-                matrix[i, j] = sub["forget_advantage"].mean()
+            if "mia_mean_auc" in sub.columns and len(sub):
+                matrix[i, j] = 0.5 - sub["mia_mean_auc"].mean()
     fig, ax = plt.subplots(figsize=(max(10, len(steps)*0.6),
                                     max(4, len(methods)*0.7)))
-    im = ax.imshow(matrix, cmap="RdYlGn_r", vmin=0, vmax=0.5,
+    # RdYlGn: low = red (leaked), high = green (erased); center at 0 so
+    # chance (0.5 MIA → adv 0) renders yellow — No-U now sits neutral, not
+    # falsely green.
+    vmax = max(0.5, np.nanmax(np.abs(matrix), initial=0.0))
+    im = ax.imshow(matrix, cmap="RdYlGn", vmin=-vmax, vmax=vmax,
                    aspect="auto", interpolation="nearest")
     ax.set_xticks(range(len(steps))); ax.set_xticklabels(steps, fontsize=8)
     ax.set_yticks(range(len(methods)))
     ax.set_yticklabels([_style(m)["label"] for m in methods], fontsize=9)
     ax.set_xlabel("Forget step")
-    ax.set_title("Forget Advantage Heatmap (↓ = better)", fontweight="bold", pad=10)
-    plt.colorbar(im, ax=ax, label="|AUC − 0.5|")
+    ax.set_title("Forget Advantage Heatmap (green = erased, red = leaked)",
+                 fontweight="bold", pad=10)
+    plt.colorbar(im, ax=ax, label="0.5 − MIA AUC")
     fig.tight_layout()
     fig.savefig(out_dir / "07_heatmap.png", bbox_inches="tight")
     plt.close(fig)
@@ -517,6 +527,7 @@ def plot_total_time_bar(df, out_dir: Path, oracle_time_s: float | None = None):
     fig, ax = plt.subplots(figsize=(9, max(4, 0.5 * len(methods) + 2)))
     colors = [_style(methods[i])["color"] for i in order]
     bars = ax.barh(sorted_methods, sorted_totals, color=colors, alpha=0.85)
+    method_by_bar = {bar: methods[i] for bar, i in zip(bars, order)}
 
     # Log axis: bars span 98–952 s but the iterative-oracle estimate sits at
     # ~10,800 s (15× single retrain) — a linear axis that fits both would
@@ -533,18 +544,39 @@ def plot_total_time_bar(df, out_dir: Path, oracle_time_s: float | None = None):
     hi = top * 1.15
     ax.set_xlim(lo, hi)
 
-    # Annotate values INSIDE each bar (right-aligned at ~97% of the tip).
+    # Annotate values: inside the bar when it fits, outside otherwise.
     # A linear offset (tip + const) collides with decade tick labels on the
     # log axis (SRL 98s ≈ 10², FT 952s ≈ 10³); a log-space offset scales
-    # with the bar, so labels never sit on a tick.
+    # with the bar, so labels never sit on a tick. White text is invisible
+    # on short bars (label wider than the bar) and on pale fills
+    # (AdaptiForget #a5d6a7, MSG-KD #81c784) — use contrast-aware colour
+    # and place outside when the bar is too narrow.
+    renderer = fig.canvas.get_renderer()
     for bar, val in zip(bars, sorted_totals):
+        label = f"{val/60:.1f} min" if val > 0 else "0.0 min"
         if val <= 0:
             ax.text(bar.get_width() + hi * 0.01, bar.get_y() + bar.get_height() / 2,
-                    "0.0 min", va="center", fontsize=9)
-        else:
+                    label, va="center", fontsize=9, color="#111111")
+            continue
+        # Does the label fit inside the bar? Compare text width (px) to bar
+        # width (px) — a short bar on a log axis can be narrower than its
+        # own label.
+        txt = ax.text(0, 0, label, fontsize=9, fontweight="bold")
+        tw = txt.get_window_extent(renderer=renderer).width
+        bw = bar.get_window_extent(renderer=renderer).width
+        txt.remove()
+        # contrast-aware text colour: luminance of the bar fill
+        c = _style(method_by_bar[bar])["color"] if method_by_bar else "#888888"
+        lum = 0.299 * int(c[1:3], 16) + 0.587 * int(c[3:5], 16) + 0.114 * int(c[5:7], 16)
+        tcol = "#111111" if lum > 150 else "white"
+        if tw < bw * 0.95:
             ax.text(bar.get_width() * 0.97, bar.get_y() + bar.get_height() / 2,
-                    f"{val/60:.1f} min", va="center", ha="right", fontsize=9,
-                    color="white", fontweight="bold")
+                    label, va="center", ha="right", fontsize=9,
+                    color=tcol, fontweight="bold")
+        else:
+            # too narrow: place OUTSIDE just right of the tip, dark text
+            ax.text(bar.get_width() * 1.03, bar.get_y() + bar.get_height() / 2,
+                    label, va="center", ha="left", fontsize=9, color="#111111")
 
     ax.set_xlabel("Total cumulative time (s, log scale)")
     ax.set_title("Total Unlearning Time by Method\n(lower = cheaper to deploy)",
@@ -772,6 +804,14 @@ def plot_forget_train_gap(df: pd.DataFrame, out_dir: Path) -> None:
     ax.set_ylabel("Step forget-train acc − step forget-holdout acc")
     ax.set_title("Forget-Train / Forget-Holdout Gap by Step\n(overfitting-to-forgetting detector)",
                  fontweight="bold", pad=10)
+    # No-Unlearning's gap ≈ 0 because it performs NO unlearning (train and
+    # holdout acc both stay ≈1.0) — visually identical to genuine erasure,
+    # semantically the opposite. Annotate so the flat zero line can't be
+    # misread as a good result.
+    if "no_unlearning" in df["method"].values:
+        ax.annotate("No-U: gap ≈ 0 trivially —\nno unlearning performed (acc stays ≈ 1.0)",
+                    xy=(df["step"].max() * 0.5, 0.01), fontsize=8,
+                    color="#111111", alpha=0.7, ha="center", va="bottom")
     ax.legend(loc="best", fontsize=9, ncol=2)
     fig.tight_layout()
     fig.savefig(out_dir / "15_forget_train_gap.png", bbox_inches="tight")
