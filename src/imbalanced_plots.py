@@ -136,23 +136,37 @@ def plot_forget_acc_by_bin(aggregated: dict, out_dir: Path) -> None:
         return
 
     plt.rcParams.update(TEXTLIKE_RC)
-    n_methods = len(methods)
+    # Retrain Oracle: perfect erasure in every bin (0.0/0.0/0.0) — its bars
+    # would be zero-height and invisible, so plot it as a distinct marker on
+    # the axis + legend entry instead of a bar group.
+    bar_methods = [m for m in methods if m != "retrain"]
+    oracle = aggregated.get("retrain")
+    n_methods = len(bar_methods)
     fig, ax = plt.subplots(figsize=(max(8, n_methods * 1.0), 5))
 
     x = np.arange(n_methods)
     for i, bin_name in enumerate(BINS):
         values = []
-        for m in methods:
+        for m in bar_methods:
             v = aggregated[m].get(f"forget_id_acc_{bin_name}")
             values.append(float(v) if v is not None else 0.0)
         ax.bar(x + i * BAR_WIDTH, values, BAR_WIDTH,
                label=BIN_LABELS[bin_name], color=BIN_COLOURS[bin_name],
                edgecolor="white", linewidth=0.5)
+    # Oracle markers: one per bin, sitting on the axis (y=0 = perfect).
+    if oracle is not None:
+        for i, bin_name in enumerate(BINS):
+            v = oracle.get(f"forget_id_acc_{bin_name}")
+            if v is None:
+                continue
+            ax.scatter([x[i] + i * BAR_WIDTH], [0.0], marker="D", s=28,
+                       color=ORACLE["color"], zorder=5,
+                       label="Retrain Oracle (0.0)" if i == 0 else None)
 
     ax.set_ylabel("Forget‑holdout identity accuracy\n(↓ better)")
     ax.set_xticks(x + BAR_WIDTH)
-    ax.set_xticklabels([aggregated[m]["method"] for m in methods], rotation=30, ha="right")
-    ax.legend(fontsize=9)
+    ax.set_xticklabels([aggregated[m]["method"] for m in bar_methods], rotation=30, ha="right")
+    ax.legend(fontsize=9, ncol=2)
     ax.set_title("Forget‑Holdout Accuracy by Popularity Bin")
     ax.axhline(0.05, color="green", linestyle="--", linewidth=0.8, alpha=0.6)
     ax.annotate("≤ 0.05 = strong forgetting", xy=(0.01, 0.07), fontsize=8, color="green", alpha=0.7)
@@ -355,6 +369,7 @@ def plot_forget_utility_frontier(aggregated: dict, out_dir: Path) -> None:
     plt.rcParams.update(TEXTLIKE_RC)
     fig, ax = plt.subplots(figsize=(8, 7))
 
+    all_pts = []  # (retain, forget, method_key, bin_name)
     for bin_name in BINS:
         xs, ys, labels = [], [], []
         for m in methods:
@@ -364,19 +379,35 @@ def plot_forget_utility_frontier(aggregated: dict, out_dir: Path) -> None:
                 xs.append(float(retain_acc))
                 ys.append(float(forget_acc))
                 labels.append(aggregated[m]["method"])
+                all_pts.append((float(retain_acc), float(forget_acc), m, bin_name))
 
         if xs:
             ax.scatter(xs, ys, color=BIN_COLOURS[bin_name],
                        label=BIN_LABELS[bin_name], s=80, edgecolors="white",
                        linewidth=0.5, alpha=0.85)
-            for xi, yi, lbl in zip(xs, ys, labels):
-                ax.annotate(lbl, (xi, yi), fontsize=7,
-                            xytext=(4, 4), textcoords="offset points",
-                            alpha=0.7)
+
+    # Label ONLY the Pareto-optimal points (no other point dominates: same
+    # or better retain AND same or better forget). 33 labelled points is
+    # unreadable; the frontier is the science.
+    dominated = set()
+    for i, (ri, fi, mi, bi) in enumerate(all_pts):
+        for j, (rj, fj, mj, bj) in enumerate(all_pts):
+            if i == j:
+                continue
+            # j dominates i: j retains ≥ i AND forgets ≤ i (strict in at least one)
+            if rj >= ri - 1e-9 and fj <= fi + 1e-9 and (rj > ri + 1e-9 or fj < fi - 1e-9):
+                dominated.add(i)
+                break
+    for i, (ri, fi, mi, bi) in enumerate(all_pts):
+        if i in dominated:
+            continue
+        ax.annotate(aggregated[mi]["method"], (ri, fi), fontsize=7,
+                    xytext=(4, 4), textcoords="offset points",
+                    alpha=0.8, fontweight="bold")
 
     ax.set_xlabel("Retain‑holdout identity accuracy (↑ better)")
     ax.set_ylabel("Forget‑holdout identity accuracy (↓ better)")
-    ax.set_title("Forgetting‑Utility Frontier\n(coloured by popularity bin)")
+    ax.set_title("Forgetting‑Utility Frontier\n(coloured by popularity bin; labels = Pareto‑optimal)")
     ax.legend(fontsize=9)
     ax.axhline(0.05, color="green", linestyle="--", linewidth=0.8, alpha=0.4)
     ax.annotate("strong forgetting", xy=(0.02, 0.055), fontsize=8, color="green", alpha=0.6)
