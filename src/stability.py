@@ -72,8 +72,13 @@ LOG_METRICS = {"model_drift", "step_time_s", "cumulative_time_s"}
 SCALE_POLICY = {
     # metric: (shared (min, max), log?)
     "retain_acc":         ((0.0, 1.05),   False),
-    "mia_mean_auc":       ((0.40, 1.05),  False),
-    "mia_auc":            ((0.40, 1.05),  False),
+    # MIA AUC: 0.5 = chance, BELOW 0.5 = the attacker is worse than chance
+    # at singling out forget members = the erasure signal (adaptiforget
+    # 0.003, FT 0.0004, CT 0.012). A 0.40 floor clipped every erasing
+    # method's curve/panel off-axis (F10-class bug — same as the per-identity
+    # signatures plot). Full range is the honest window.
+    "mia_mean_auc":       ((0.0, 1.05),   False),
+    "mia_auc":            ((0.0, 1.05),   False),
     "forget_advantage":   ((-0.02, 0.55), False),
     "fraction_leaked":    ((-0.02, 1.05), False),
     "model_drift":        (None,          True),
@@ -547,7 +552,10 @@ def plot_per_identity_signatures(
         ax.axhline(0.50, color="grey", ls="--", lw=1, alpha=0.5)
         ax.set_title(_style(method)["label"], fontsize=10)
         ax.set_ylabel("MIA AUC")
-        ax.set_ylim(0.40, 1.0)
+        # Full 0–1 range: the whole point is *which* identities leaked
+        # (red > 0.55) vs forgotten (green < 0.55). A 0.40 floor clipped
+        # every erasing method's bars off-axis (FT max 0.0024 → blank panel).
+        ax.set_ylim(0.0, 1.0)
 
     for ax in axes[len(df["method"].unique()):]:
         ax.set_visible(False)
@@ -580,7 +588,9 @@ def plot_demographic_heatmap(
 
     fig, ax = plt.subplots(figsize=(max(8, len(pivoted.columns)*1.2),
                                     max(4, len(pivoted.index)*0.6)))
-    im = ax.imshow(pivoted.values, cmap="RdYlGn_r", vmin=0.45, vmax=0.65,
+    # Full 0–1 colour window: MIA AUC spans 0.0002 (erased) to 0.84 (leaked);
+    # the old 0.45–0.65 window saturated 36/44 cells (F11-class bug).
+    im = ax.imshow(pivoted.values, cmap="RdYlGn_r", vmin=0.0, vmax=1.0,
                    aspect="auto")
     ax.set_xticks(range(len(pivoted.columns)))
     ax.set_xticklabels(pivoted.columns, rotation=45, ha="right", fontsize=9)
