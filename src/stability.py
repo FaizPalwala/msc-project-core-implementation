@@ -583,13 +583,20 @@ def plot_per_identity_signatures(
             ax.legend(loc="lower right", fontsize=7)
         ax.set_title(_style(method_key)["label"], fontsize=10)
         ax.set_ylabel("MIA AUC")
-        # Log y-axis: per-identity MIA spans 4 orders of magnitude
-        # (FT/CT at 1e-4 → GA/NG+ at ~0.8). A linear 0–1 axis renders
-        # fully-erased methods as invisible 0.2%-tall bars (FT max 0.0024
-        # → panel looks blank). Log keeps the red/green leak threshold
-        # (0.55) meaningful while showing the erasure magnitude.
-        ax.set_yscale("log")
-        ax.set_ylim(5e-5, 1.05)
+        # Linear 0–1 keeps the oracle reference and cross-panel comparability.
+        # Stand-out erasures (FT/CT: bars ~1e-4..5e-3, invisible at this
+        # scale) are highlighted by the per-panel leak summary in the top
+        # corner — the same mechanism on every panel, so "0/75 leaked" reads
+        # against "18/75 leaked" rather than being logged away.
+        ax.set_ylim(0.0, 1.0)
+        n_leaked = int((aucs["mia_auc"] > 0.55).sum())
+        n_total = len(aucs)
+        max_auc = float(aucs["mia_auc"].max())
+        ax.text(0.02, 0.97,
+                f"{n_leaked}/{n_total} leaked · max {max_auc:.4f}",
+                transform=ax.transAxes, fontsize=8, va="top", ha="left",
+                bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
+                          edgecolor="#555555", alpha=0.85))
 
     for ax in axes[len(methods):]:
         ax.set_visible(False)
