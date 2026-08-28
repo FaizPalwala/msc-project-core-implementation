@@ -48,7 +48,7 @@ import logging
 logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
 
-# ── Style ─────────────────────────────────────────────────────────────────────
+# ── Style (shared module — see plot_style.py) ──────────────────────────────
 
 plt.rcParams.update({
     "figure.dpi": 150, "savefig.dpi": 300,
@@ -58,24 +58,35 @@ plt.rcParams.update({
     "lines.linewidth": 2.0, "lines.markersize": 6,
 })
 
-METHOD_STYLES = {
-    "no_unlearning": {"color": "#9e9e9e", "ls": ":",  "marker": "x", "label": "No-Op"},
-    "ga":            {"color": "#e57373", "ls": "--", "marker": "s", "label": "GA"},
-    "srl":           {"color": "#ffb74d", "ls": "--", "marker": "^", "label": "SRL"},
-    "ft":            {"color": "#fff176", "ls": "--", "marker": "D", "label": "FT"},
-    "ng_plus":       {"color": "#64b5f6", "ls": "-",  "marker": "o", "label": "NG+"},
-    "msg":           {"color": "#4db6ac", "ls": "-",  "marker": "v", "label": "MSG"},
-    "msg_kd":        {"color": "#81c784", "ls": "-",  "marker": "P", "label": "MSG-KD"},
-    "ct":            {"color": "#ba68c8", "ls": "-",  "marker": "h", "label": "CT"},
-    "adaptiforget":  {"color": "#ff7043", "ls": "-",  "marker": "*", "label": "AdaptiForget"},
-    "budget_scaled": {"color": "#8d6e63", "ls": "-.", "marker": "X", "label": "Budget-Scaled"},
+from plot_style import (  # noqa: E402
+    METHOD_STYLES, ORACLE, GROUPS, SURVIVORS, COLLAPSERS,
+    style as _style, method_label, panel_order,
+)
+
+# ── Shared scale policy (B1) ────────────────────────────────────────────────
+# Each metric gets ONE y-window used by ALL subgroup panels, so the panels
+# are directly comparable instead of each auto-scaling into its own world.
+# Log-scale metrics span orders of magnitude (drift 9.7 → 1.36e6): a linear
+# axis would flatten the SOTA/novel panels entirely.
+LOG_METRICS = {"model_drift", "step_time_s", "cumulative_time_s"}
+SCALE_POLICY = {
+    # metric: (shared (min, max), log?)
+    "retain_acc":         ((0.0, 1.05),   False),
+    "mia_mean_auc":       ((0.40, 1.05),  False),
+    "mia_auc":            ((0.40, 1.05),  False),
+    "forget_advantage":   ((-0.02, 0.55), False),
+    "fraction_leaked":    ((-0.02, 1.05), False),
+    "model_drift":        (None,          True),
+    "step_time_s":        (None,          True),
+    "cumulative_time_s":  (None,          True),
+    "step_forget_acc":    ((0.0, 1.05),   False),
 }
-ORACLE_COLOR = "#1565c0"
+PARETO_LIM = (0.0, 1.0)
 
 
-def _style(method: str) -> dict:
-    return METHOD_STYLES.get(method, {"color": "#555", "ls": "-",
-                                       "marker": "o", "label": method})
+def scale_for(metric: str) -> tuple[tuple | None, bool]:
+    """Return (shared (min,max) or None, log?) for a metric."""
+    return SCALE_POLICY.get(metric, (None, False))
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
@@ -118,44 +129,141 @@ def load_data(combined_csv: str) -> pd.DataFrame:
 # ── Plot helpers ──────────────────────────────────────────────────────────────
 
 
-def _plot_vs_step(df, metric, ylabel, title, out_file,
-                  target_line=None, target_label=None, ylim=None):
-    fig, ax = plt.subplots(figsize=(9, 5))
-    methods = sorted(df["method"].unique())
+def _draw_vs_step(ax, df, metric, style_kwargs: dict | None = None):
+    """Plotting body: one line + μ±σ band per method on an existing axes.
+
+    style_kwargs: {lw, ms} overrides for compact/thesis panels (B3).
+    """
+    methods = panel_order(sorted(df["method"].unique()))
     std_col = f"{metric}_std"
     has_std = std_col in df.columns
+    lw = style_kwargs.get("lw", 2.0) if style_kwargs else 2.0
+    ms = style_kwargs.get("ms", 6) if style_kwargs else 6
 
     for method in methods:
         sub = df[df["method"] == method].sort_values("step")
+        if sub.empty:
+            continue
         s = _style(method)
         ax.plot(sub["step"], sub[metric],
                 color=s["color"], ls=s["ls"], marker=s["marker"],
-                label=s["label"], alpha=0.9)
-        # Error band from multi-seed std (μ ± σ)
+                label=s["label"], alpha=0.9, lw=lw, ms=ms)
+        # Error band from multi-seed std (μ ± σ) — α 0.10
         if has_std:
             lo = sub[metric] - sub[std_col]
             hi = sub[metric] + sub[std_col]
             ax.fill_between(sub["step"], lo, hi,
-                            color=s["color"], alpha=0.12, lw=0)
+                            color=s["color"], alpha=0.10, lw=0)
+    return has_std
 
-    if has_std:
-        ax.set_title(f"{title}\n(shaded = μ ± σ across seeds)",
-                     fontweight="bold", pad=10)
-    else:
-        ax.set_title(title, fontweight="bold", pad=10)
+
+def _apply_scale(ax, metric):
+    """Shared y-limits / log-axis per the SCALE_POLICY (B1)."""
+    lims, log = scale_for(metric)
+    if log:
+        ax.set_yscale("log")
+    if lims:
+        ax.set_ylim(*lims)
+
+
+def _plot_vs_step(df, metric, ylabel, title, out_file,
+                  target_line=None, target_label=None, ylim=None,
+                  style_kwargs: dict | None = None, show_title=True):
+    """Full figure (release record): all methods, one axes, saved to out_file."""
+    fig, ax = plt.subplots(figsize=(9, 5))
+    has_std = _draw_vs_step(ax, df, metric, style_kwargs)
+
+    if show_title:
+        if has_std:
+            ax.set_title(f"{title}\n(shaded = μ ± σ across seeds)",
+                         fontweight="bold", pad=10)
+        else:
+            ax.set_title(title, fontweight="bold", pad=10)
 
     if target_line is not None:
-        ax.axhline(target_line, color=ORACLE_COLOR, ls=":", lw=1.5,
+        ax.axhline(target_line, color=ORACLE["color"], ls=ORACLE["ls"], lw=1.5,
                    label=target_label or f"Target ({target_line})", alpha=0.7)
     ax.set_xlabel("Forget step")
     ax.set_ylabel(ylabel)
     if ylim:
         ax.set_ylim(*ylim)
+    else:
+        _apply_scale(ax, metric)
     ax.legend(loc="best", fontsize=9, ncol=2)
     fig.tight_layout()
     fig.savefig(out_file, bbox_inches="tight")
     plt.close(fig)
     logger.info(f"  Saved: {Path(out_file).name}")
+
+
+def _plot_subgrouped(df, metric, ylabel, out_file,
+                     target_line=None, target_label=None,
+                     style_kwargs: dict | None = None,
+                     tag_letters=("a", "b", "c")):
+    """3 stacked panels — one per registry group (G1/G2/G3, B2).
+
+    Each panel draws its group's methods + the oracle target line; all
+    panels SHARE the metric's y-limits (B1) so they read side-by-side.
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(8, 9.5), sharex=True)
+    all_steps = sorted(df["step"].unique())
+    lw = style_kwargs.get("lw", 2.0) if style_kwargs else 2.0
+    ms = style_kwargs.get("ms", 6) if style_kwargs else 6
+
+    for ax, (gname, members), tag in zip(axes, GROUPS, tag_letters):
+        sub = df[df["method"].isin(members)]
+        if sub.empty:
+            ax.set_visible(False)
+            continue
+        _draw_vs_step(ax, sub, metric,
+                      {"lw": lw, "ms": ms} if style_kwargs else None)
+        if target_line is not None:
+            ax.axhline(target_line, color=ORACLE["color"], ls=ORACLE["ls"],
+                       lw=1.5, label=target_label or f"Target ({target_line})",
+                       alpha=0.7)
+        _apply_scale(ax, metric)
+        ax.text(-0.06, 1.02, f"({tag})", transform=ax.transAxes,
+                fontsize=10, fontweight="bold", va="bottom", ha="right")
+        ax.set_ylabel(ylabel, fontsize=9)
+        ax.legend(loc="best", fontsize=9, ncol=2)
+
+    axes[-1].set_xlabel("Forget step")
+    axes[-1].set_xticks(all_steps)
+    fig.tight_layout()
+    fig.savefig(out_file, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"  Saved: {Path(out_file).name} (3 subgroup panels)")
+
+
+def _plot_pair(df, metric, ylabel, out_file,
+               target_line=None, target_label=None, members=None):
+    """Thesis-pair variant (B3): compact single panel, family colours,
+    ~200 pt half-width — tuned for a two-figure LaTeX pair.
+    """
+    fig, ax = plt.subplots(figsize=(7, 4.2))
+    sub = df if members is None else df[df["method"].isin(members)]
+    _draw_vs_step(ax, sub, metric, {"lw": 1.5, "ms": 5})
+    if target_line is not None:
+        ax.axhline(target_line, color=ORACLE["color"], ls=ORACLE["ls"], lw=1.5,
+                   label=target_label or f"Target ({target_line})", alpha=0.7)
+    ax.set_xlabel("Forget step")
+    ax.set_ylabel(ylabel, fontsize=9)
+    _apply_scale(ax, metric)
+    ax.legend(loc="best", fontsize=8, ncol=2)   # compact legend
+    fig.tight_layout()
+    fig.savefig(out_file, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"  Saved: {Path(out_file).name} (pair)")
+
+
+def _vs_step_targets(metric: str) -> tuple:
+    """(target_line, target_label) per metric, if any."""
+    return {
+        "mia_mean_auc": (0.50, "Perfect forgetting (0.50)"),
+        "forget_advantage": (0.0, "Perfect forgetting"),
+        "fraction_leaked": (0.0, "Zero leakage"),
+        "step_forget_acc": (0.0, "Perfect step forgetting"),
+    }.get(metric, (None, None))
 
 
 # ── Core plots (01–09) ────────────────────────────────────────────────────────
@@ -289,7 +397,7 @@ def plot_pareto(df, out_dir: Path):
                 transform=ax.transAxes, fontsize=10,
                 bbox=dict(boxstyle="round", fc="white", alpha=0.8))
 
-    ax.axvline(0.50, color=ORACLE_COLOR, ls=":", lw=1.5, alpha=0.7,
+    ax.axvline(0.50, color=ORACLE["color"], ls=ORACLE["ls"], lw=1.5, alpha=0.7,
                label="Perfect MIA (0.50)")
     ax.set_xlabel("MIA AUC (← better forgetting)")
     ax.set_ylabel("Retain Accuracy (↑ better)")
@@ -517,7 +625,7 @@ def plot_phase_space(
                         arrowprops=dict(arrowstyle="->", color=s["color"],
                                         lw=1.5, alpha=0.4))
 
-    ax.axvline(0.50, color=ORACLE_COLOR, ls=":", lw=1.5, alpha=0.7, label="Perfect forgetting")
+    ax.axvline(0.50, color=ORACLE["color"], ls=ORACLE["ls"], lw=1.5, alpha=0.7, label="Perfect forgetting")
     ax.set_xlabel("MIA AUC →")
     ax.set_ylabel("Retain Accuracy →")
     ax.set_title("Unlearning Trajectory: Forgetting vs. Utility\n(arrows = sequential steps)",
@@ -638,6 +746,7 @@ def run_stability_analysis(
     demog_csv: str | None = None,
     methods: list[str] | None = None,
     steps: list[int] | None = None,
+    pair: bool = False,
 ) -> None:
     """Generate stability plots.
 
@@ -677,7 +786,7 @@ def run_stability_analysis(
     logger.info(f"  Steps:   {sorted(df['step'].unique())}")
     logger.info(f"  Rows:    {len(df)}")
 
-    # Core
+    # Core (release record — full-method files, unchanged names)
     plot_retain_acc(df, out_path)
     plot_mia_auc(df, out_path)
     plot_forget_advantage(df, out_path)
@@ -699,6 +808,37 @@ def run_stability_analysis(
     plot_step_forget_acc(df, out_path)
     plot_forget_train_gap(df, out_path)
 
+    # ── Subgrouped panels (B4: plots/subgroups/<NN>_<name>_subgroups.png) ─
+    sub_dir = out_path / "subgroups"
+    sub_dir.mkdir(parents=True, exist_ok=True)
+    for metric, name, ylabel in [
+        ("retain_acc", "01_retain_acc", "Retain Identity Accuracy"),
+        ("mia_mean_auc", "02_mia_auc", "MIA AUC (identity head)"),
+        ("forget_advantage", "03_forget_adv", "Forget Advantage |AUC − 0.5|"),
+        ("model_drift", "04_model_drift", "Weight L₂ Distance from Original"),
+        ("step_time_s", "05_step_time", "Step Time (s)"),
+        ("cumulative_time_s", "09_cumulative_time", "Cumulative Time (s)"),
+        ("fraction_leaked", "13_fraction_leaked", "Fraction Identities Leaked"),
+        ("step_forget_acc", "16_step_forget_acc", "Step-Local Forget Identity Accuracy"),
+    ]:
+        tline, tlabel = _vs_step_targets(metric)
+        _plot_subgrouped(df, metric, ylabel,
+                         sub_dir / f"{name}_subgroups.png",
+                         target_line=tline, target_label=tlabel)
+
+    # ── Thesis pairs (B3) — written only with --pair ─────────────────────
+    if pair:
+        fig_dir = Path("src/figures") if Path("src").exists() else out_path
+        fig_dir.mkdir(parents=True, exist_ok=True)
+        pairs = [
+            ("iter_01_retain_acc.png", "retain_acc",
+             "Retain Identity Accuracy", ("poisson",)),
+        ]
+        for fname, metric, ylabel, _members in pairs:
+            tline, tlabel = _vs_step_targets(metric)
+            _plot_pair(df, metric, ylabel, fig_dir / fname,
+                       target_line=tline, target_label=tlabel)
+
     compute_summary_stats(df, out_path)
     logger.info(f"\n[OK] All plots → {out_path}/")
 
@@ -713,6 +853,8 @@ if __name__ == "__main__":
                         help="Plot only these methods (e.g. ga adaptiforget)")
     parser.add_argument("--steps",      type=int, nargs="*", default=None,
                         help="Plot only these steps (e.g. 1 5 10 15)")
+    parser.add_argument("--pair", action="store_true",
+                        help="Also write compact thesis-pair figures to src/figures")
     args = parser.parse_args()
     run_stability_analysis(
         args.combined, args.out,
@@ -720,4 +862,5 @@ if __name__ == "__main__":
         demog_csv=args.demog_csv,
         methods=args.methods or None,
         steps=args.steps or None,
+        pair=args.pair,
     )

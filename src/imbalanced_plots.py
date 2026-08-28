@@ -60,6 +60,61 @@ TEXTLIKE_RC = {
     "figure.dpi": 150,
 }
 
+from plot_style import (  # noqa: E402
+    METHOD_STYLES, ORACLE, GROUPS, style as _style, method_label,
+)
+
+# Shared y-limits across subgrouped bar panels (C1) — one window per metric
+# so panels are directly comparable.
+BIN_SHARED_LIMS = {
+    "forget": (0.0, 1.05),
+    "mia":    (0.30, 1.05),
+    "gap":    (-0.1, 0.6),
+}
+
+
+def _bar_panel(ax, aggregated, methods, metric_key, bin_key, lims, rotate=False):
+    """One subgrouped bar panel: methods × bins, shared y-limits."""
+    x = np.arange(len(methods))
+    for i, bin_name in enumerate(BINS):
+        values = []
+        for m in methods:
+            v = aggregated[m].get(f"{metric_key}_{bin_name}")
+            values.append(float(v) if v is not None else np.nan)
+        ax.bar(x + i * BAR_WIDTH, values, BAR_WIDTH,
+               label=BIN_LABELS[bin_name], color=BIN_COLOURS[bin_name],
+               edgecolor="white", linewidth=0.5)
+    ax.set_ylim(*lims)
+    ax.set_xticks(x + BAR_WIDTH)
+    ax.set_xticklabels([method_label(m) for m in methods],
+                       rotation=45 if rotate else 30, ha="right", fontsize=9)
+    ax.legend(fontsize=8, ncol=3)
+
+
+def _subgrouped_bars(aggregated, metric_key, ylabel, out_dir, fname,
+                     lims, extra_lines=None):
+    """3-panel bar figure: G1 baselines / G2 SOTA / G3 novel (C1).
+
+    Same bin colours in every panel; oracle rides as a horizontal target
+    line (extra_lines), not a row.
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(8, 9.5), sharex=False)
+    for ax, (gname, members), rotate in zip(axes, GROUPS, (False, True, True)):
+        present = [m for m in members if m in aggregated]
+        if not present:
+            ax.set_visible(False)
+            continue
+        _bar_panel(ax, aggregated, present, metric_key, bin_key="",
+                   lims=lims, rotate=rotate)
+        ax.set_ylabel(ylabel, fontsize=9)
+        if extra_lines:
+            for y, lbl, c in extra_lines:
+                ax.axhline(y, color=c, ls="--", lw=0.8, alpha=0.5)
+    fig.tight_layout()
+    fig.savefig(out_dir / fname, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"  → {out_dir / fname} (3 subgroup panels)")
+
 
 def load_data(results_path: str, csv_path: str) -> tuple[dict, pd.DataFrame]:
     """Load aggregated JSON and CSV, return (aggregated, df)."""
@@ -152,15 +207,17 @@ def plot_mia_auc_by_bin(aggregated: dict, out_dir: Path) -> None:
 
 
 def plot_forget_train_gap_by_bin(aggregated: dict, out_dir: Path) -> None:
-    """The gap between forget accuracy on train vs holdout images, per bin.
+    """The gap between forget accuracy on train vs holdout images.
 
-    Only possible if the aggregated JSON has both forget_id_acc_{bin} and
-    the train‑side accuracy (which is currently not stratified by bin at
-    the dataset level — gap is computed per‑method, not per‑bin).
+    Note: train-side accuracy is NOT stratified by popularity bin (the
+    evaluation pipeline only stratifies the holdout side), so the gap is
+    per-method — the plot name reflects that honestly.  The §8.8 claim
+    ("the forget-train gap that monitors overfitting") is a per-method
+    claim, so this is the correct granularity.
 
-    Fallback: plots the single per‑method gap with a note.
+    Release: 03_forget_train_gap.png (per-method bars, all methods).
     """
-    methods = list(aggregated.keys())
+    methods = [k for k in aggregated if aggregated[k].get("forget_train_id_acc") is not None]
     gaps = {}
     for m in methods:
         f_hold = aggregated[m].get("forget_id_acc")
@@ -169,29 +226,29 @@ def plot_forget_train_gap_by_bin(aggregated: dict, out_dir: Path) -> None:
             gaps[m] = float(f_train) - float(f_hold)
 
     if not gaps:
-        logger.info("  [skip] no forget‑train gap data")
+        logger.info("  [skip] no forget-train gap data")
         return
 
     plt.rcParams.update(TEXTLIKE_RC)
     n_methods = len(gaps)
     fig, ax = plt.subplots(figsize=(max(8, n_methods * 1.0), 5))
 
-    names = [aggregated[m]["method"] for m in gaps]
+    names = [method_label(m) for m in gaps]
     values = list(gaps.values())
-    colours = ["#2ecc71" if v <= 0.10 else "#e74c3c" for v in values]
+    colours = [_style(m)["color"] for m in gaps]
 
     ax.bar(names, values, color=colours, edgecolor="white", linewidth=0.5)
-    ax.set_ylabel("Forget‑train − Forget‑holdout gap\n(≤ 0.10 = genuine forgetting, > 0.15 = overfit)")
-    ax.set_title("Forget‑Train / Forget‑Holdout Gap")
+    ax.set_ylabel("Forget-train − Forget-holdout gap\n(≤ 0.10 = genuine forgetting, > 0.15 = overfit)")
+    ax.set_title("Forget-Train / Forget-Holdout Gap (per method)")
     ax.axhline(0.10, color="green", linestyle="--", linewidth=0.8, alpha=0.6)
     ax.axhline(0.15, color="red", linestyle="--", linewidth=0.8, alpha=0.5)
     ax.annotate("gap ≤ 0.10", xy=(0.01, 0.11), fontsize=8, color="green", alpha=0.7)
     ax.annotate("gap ≥ 0.15", xy=(0.01, 0.16), fontsize=8, color="red", alpha=0.6)
     plt.xticks(rotation=30, ha="right")
     fig.tight_layout()
-    fig.savefig(out_dir / "03_forget_train_gap_by_bin.png")
+    fig.savefig(out_dir / "03_forget_train_gap.png")
     plt.close(fig)
-    logger.info(f"  → {out_dir / '03_forget_train_gap_by_bin.png'}")
+    logger.info(f"  → {out_dir / '03_forget_train_gap.png'}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -336,7 +393,11 @@ def plot_forget_utility_frontier(aggregated: dict, out_dir: Path) -> None:
 
 
 def plot_kruskal_pvalues(aggregated: dict, out_dir: Path) -> None:
-    """Compute Kruskal‑Wallis H‑test per method for 'is there a bin difference?'.
+    """Kruskal‑Wallis H‑test per method: 'is there a bin difference?'.
+
+    Transposed layout (C2): methods are COLUMNS, the 2 metrics are ROWS —
+    a wide, short heatmap instead of the old 2.1:1 portrait that ate a
+    page at 0.45 textwidth.
 
     Uses the per‑bin AUC and forget‑acc values directly (small n = 3 bins),
     so p‑values are rough but directional.
@@ -347,20 +408,19 @@ def plot_kruskal_pvalues(aggregated: dict, out_dir: Path) -> None:
         return
 
     metrics = ["MIA AUC", "Forget Acc"]
-    p_matrix = np.full((len(methods), len(metrics)), np.nan)
+    p_matrix = np.full((len(metrics), len(methods)), np.nan)
 
-    for i, method in enumerate(methods):
+    for j, method in enumerate(methods):
         auc_vals = [aggregated[method].get(f"mia_auc_{b}") for b in BINS]
         forget_vals = [aggregated[method].get(f"forget_id_acc_{b}") for b in BINS]
         auc_vals = [v for v in auc_vals if v is not None]
         forget_vals = [v for v in forget_vals if v is not None]
 
-        for j, vals in enumerate([auc_vals, forget_vals]):
+        for i, vals in enumerate([auc_vals, forget_vals]):
             if len(set(vals)) < 2:
                 continue
-            # Kruskal‑Wallis needs per‑group data — with 3 groups × N=1 per group,
-            # this is degenerate.  Use the values as they are and report H.
-            # A real implementation would use per‑identity values.
+            # Kruskal‑Wallis with 3 groups × N=1 per group is degenerate;
+            # keep the per-bin values as the groups and report H.
             groups = [[v] for v in vals]
             try:
                 H, p = stats.kruskal(*groups)
@@ -369,28 +429,31 @@ def plot_kruskal_pvalues(aggregated: dict, out_dir: Path) -> None:
                 pass
 
     plt.rcParams.update(TEXTLIKE_RC)
-    fig, ax = plt.subplots(figsize=(len(metrics) * 1.8, len(methods) * 0.55 + 1.5))
+    fig, ax = plt.subplots(
+        figsize=(len(methods) * 0.8 + 2.0, 3.0),
+    )
 
     im = ax.imshow(p_matrix, cmap="RdYlGn_r", aspect="auto", vmin=0, vmax=1)
-    ax.set_xticks(range(len(metrics)))
-    ax.set_xticklabels(metrics)
-    ax.set_yticks(range(len(methods)))
-    ax.set_yticklabels([aggregated[m]["method"] for m in methods])
+    ax.set_xticks(range(len(methods)))
+    ax.set_xticklabels([method_label(m) for m in methods],
+                       rotation=45, ha="right", fontsize=8)
+    ax.set_yticks(range(len(metrics)))
+    ax.set_yticklabels(metrics, fontsize=9)
 
-    for i in range(len(methods)):
-        for j in range(len(metrics)):
+    for i in range(len(metrics)):
+        for j in range(len(methods)):
             val = p_matrix[i, j]
             if not np.isnan(val):
                 colour = "white" if val < 0.3 else "black"
                 ax.text(j, i, f"{val:.3f}", ha="center", va="center",
-                        fontsize=8, color=colour, fontweight="bold" if val < 0.05 else "normal")
+                        fontsize=8, color=colour,
+                        fontweight="bold" if val < 0.05 else "normal")
 
     fig.colorbar(im, ax=ax, label="p‑value (H₀: no bin difference)")
-    ax.set_title("Kruskal‑Wallis p‑values\n(lower = significant bin disparity)")
     fig.tight_layout()
     fig.savefig(out_dir / "06_kruskal_pvalues.png")
     plt.close(fig)
-    logger.info(f"  → {out_dir / '06_kruskal_pvalues.png'}")
+    logger.info(f"  → {out_dir / '06_kruskal_pvalues.png'} (transposed)")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -422,6 +485,19 @@ def main() -> None:
     plot_auc_vs_images(df, agg, out_dir)
     plot_forget_utility_frontier(agg, out_dir)
     plot_kruskal_pvalues(agg, out_dir)
+
+    # ── Subgrouped bar panels (C1) — 3 panels per metric ────────────────
+    sub_dir = out_dir / "subgroups"
+    sub_dir.mkdir(parents=True, exist_ok=True)
+    _subgrouped_bars(agg, "forget_id_acc", "Forget-holdout identity acc (↓ better)",
+                     sub_dir, "01_forget_acc_by_bin_subgroups.png",
+                     BIN_SHARED_LIMS["forget"],
+                     extra_lines=[(0.05, "strong forgetting", "green")])
+    _subgrouped_bars(agg, "mia_auc", "Per-identity MIA AUC (↓ better)",
+                     sub_dir, "02_mia_auc_by_bin_subgroups.png",
+                     BIN_SHARED_LIMS["mia"],
+                     extra_lines=[(0.50, "chance", "gray"),
+                                  (0.55, "leak threshold", "red")])
 
     logger.info(f"\n[OK] {len(list(out_dir.glob('*.png')))} plots → {out_dir}")
 
