@@ -367,48 +367,55 @@ def plot_forget_utility_frontier(aggregated: dict, out_dir: Path) -> None:
         return
 
     plt.rcParams.update(TEXTLIKE_RC)
-    fig, ax = plt.subplots(figsize=(8, 7))
+    fig, ax = plt.subplots(figsize=(9, 7))
 
+    # colour = method (11 styles), marker shape = popularity bin, so every
+    # point carries BOTH identities; the legend carries the method names
+    # (33 text labels were unreadable, and frontier-only labels dropped all
+    # method information — this keeps both).
+    BIN_MARKERS = {"high": "^", "medium": "o", "low": "s"}
     all_pts = []  # (retain, forget, method_key, bin_name)
-    for bin_name in BINS:
-        xs, ys, labels = [], [], []
-        for m in methods:
+    for m in methods:
+        for bin_name in BINS:
             retain_acc = aggregated[m].get("retain_id_acc")
             forget_acc = aggregated[m].get(f"forget_id_acc_{bin_name}")
             if retain_acc is not None and forget_acc is not None:
-                xs.append(float(retain_acc))
-                ys.append(float(forget_acc))
-                labels.append(aggregated[m]["method"])
                 all_pts.append((float(retain_acc), float(forget_acc), m, bin_name))
 
-        if xs:
-            ax.scatter(xs, ys, color=BIN_COLOURS[bin_name],
-                       label=BIN_LABELS[bin_name], s=80, edgecolors="white",
-                       linewidth=0.5, alpha=0.85)
+    for m in methods:
+        pts = [p for p in all_pts if p[2] == m]
+        if not pts:
+            continue
+        st = _style(m)
+        for (ri, fi, _, bn) in pts:
+            ax.scatter(ri, fi, color=st["color"], marker=BIN_MARKERS[bn],
+                       s=70, edgecolors="white", linewidth=0.5, alpha=0.85)
+        # one legend handle per method (uses the high-bin marker)
+        ax.scatter([], [], color=st["color"], marker=BIN_MARKERS["high"],
+                   s=70, edgecolors="white", linewidth=0.5,
+                   label=st["label"])
 
-    # Label ONLY the Pareto-optimal points (no other point dominates: same
-    # or better retain AND same or better forget). 33 labelled points is
-    # unreadable; the frontier is the science.
-    dominated = set()
+    # Pareto front envelope: non-dominated points sorted by retain (the
+    # frontier is the science — a step line, not a label storm).
+    dom = set()
     for i, (ri, fi, mi, bi) in enumerate(all_pts):
         for j, (rj, fj, mj, bj) in enumerate(all_pts):
-            if i == j:
-                continue
-            # j dominates i: j retains ≥ i AND forgets ≤ i (strict in at least one)
-            if rj >= ri - 1e-9 and fj <= fi + 1e-9 and (rj > ri + 1e-9 or fj < fi - 1e-9):
-                dominated.add(i)
+            if i != j and rj >= ri - 1e-9 and fj <= fi + 1e-9 \
+               and (rj > ri + 1e-9 or fj < fi - 1e-9):
+                dom.add(i)
                 break
-    for i, (ri, fi, mi, bi) in enumerate(all_pts):
-        if i in dominated:
-            continue
-        ax.annotate(aggregated[mi]["method"], (ri, fi), fontsize=7,
-                    xytext=(4, 4), textcoords="offset points",
-                    alpha=0.8, fontweight="bold")
+    front = sorted([p for i, p in enumerate(all_pts) if i not in dom],
+                   key=lambda p: -p[0])
+    if front:
+        fx = [p[0] for p in front]
+        fy = [p[1] for p in front]
+        ax.step(fx, fy, where="post", color="#111111", ls="--", lw=1.2,
+                label="Pareto front", alpha=0.7)
 
     ax.set_xlabel("Retain‑holdout identity accuracy (↑ better)")
     ax.set_ylabel("Forget‑holdout identity accuracy (↓ better)")
-    ax.set_title("Forgetting‑Utility Frontier\n(coloured by popularity bin; labels = Pareto‑optimal)")
-    ax.legend(fontsize=9)
+    ax.set_title("Forgetting‑Utility Frontier\n(colour = method; marker = popularity bin; dashed = Pareto front)")
+    ax.legend(fontsize=8, ncol=2, loc="lower right", framealpha=0.9)
     ax.axhline(0.05, color="green", linestyle="--", linewidth=0.8, alpha=0.4)
     ax.annotate("strong forgetting", xy=(0.02, 0.055), fontsize=8, color="green", alpha=0.6)
 
