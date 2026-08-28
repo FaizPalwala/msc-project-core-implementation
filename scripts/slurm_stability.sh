@@ -40,6 +40,7 @@ COMBINED="${1:-$PROJECT_DIR/results/iterative/iterative_combined_aggregated.csv}
 OUT="${2:-$PROJECT_DIR/results/iterative/plots}"
 PER_ID="${3:-}"
 DEMOG="${4:-}"
+ORACLE_TIME="${5:-}"
 
 cd "$PROJECT_DIR"
 echo "[$(date)] Stability plots → $OUT"
@@ -47,6 +48,7 @@ echo "[$(date)] Stability plots → $OUT"
 ARGS="--combined $COMBINED --out $OUT"
 [ -n "$PER_ID" ] && ARGS="$ARGS --per_id_csv $PER_ID"
 [ -n "$DEMOG" ] && ARGS="$ARGS --demog_csv $DEMOG"
+[ -n "$ORACLE_TIME" ] && ARGS="$ARGS --oracle_time_s $ORACLE_TIME"
 
 python src/stability.py $ARGS 2>&1
 

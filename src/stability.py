@@ -487,11 +487,18 @@ def plot_cumulative_time(df, out_dir: Path):
                   "Cumulative Time vs. Iteration", out_dir / "09_cumulative_time.png")
 
 
-def plot_total_time_bar(df, out_dir: Path):
+def plot_total_time_bar(df, out_dir: Path, oracle_time_s: float | None = None):
     """Total wall-clock per method as a sorted horizontal bar chart.
 
     Emphasises cost differences between methods — a key deployment
     feasibility metric.  Uses final cumulative_time_s per method.
+
+    oracle_time_s (optional): single-shot retrain-oracle wall time — the
+    'cheaper-than-retraining' threshold (Bourtoule et al. 2021). Drawn as a
+    dashed reference line, NOT a bar: the oracle never ran the iterative
+    protocol (order-independent by design, §9), so it has no cumulative
+    trajectory — but its one-shot cost is exactly the deployment baseline
+    unlearning must beat.
     """
     methods = sorted(df["method"].unique())
     totals = []
@@ -518,7 +525,12 @@ def plot_total_time_bar(df, out_dir: Path):
     ax.set_xlabel("Total cumulative time (s)")
     ax.set_title("Total Unlearning Time by Method\n(lower = cheaper to deploy)",
                  fontweight="bold", pad=10)
-    ax.set_xlim(0, max(sorted_totals) * 1.15)
+    ax.set_xlim(0, max(max(sorted_totals) * 1.15, (oracle_time_s or 0) * 1.08))
+    if oracle_time_s is not None:
+        ax.axvline(oracle_time_s, color=ORACLE["color"], ls=ORACLE["ls"], lw=1.8,
+                   alpha=0.8,
+                   label=f"Retrain oracle (single-shot): {oracle_time_s/60:.1f} min")
+        ax.legend(loc="lower right", fontsize=9)
     fig.tight_layout()
     fig.savefig(out_dir / "14_total_time_bar.png", bbox_inches="tight")
     plt.close(fig)
@@ -798,6 +810,7 @@ def run_stability_analysis(
     methods: list[str] | None = None,
     steps: list[int] | None = None,
     pair: bool = False,
+    oracle_time_s: float | None = None,
 ) -> None:
     """Generate stability plots.
 
@@ -847,7 +860,7 @@ def run_stability_analysis(
     plot_heatmap(df, out_path)
     plot_radar(df, out_path)
     plot_cumulative_time(df, out_path)
-    plot_total_time_bar(df, out_path)
+    plot_total_time_bar(df, out_path, oracle_time_s=oracle_time_s)
 
     # New
     plot_per_identity_signatures(per_id_csv, out_path)
@@ -906,6 +919,9 @@ if __name__ == "__main__":
                         help="Plot only these steps (e.g. 1 5 10 15)")
     parser.add_argument("--pair", action="store_true",
                         help="Also write compact thesis-pair figures to src/figures")
+    parser.add_argument("--oracle_time_s", type=float, default=None,
+                        help="Single-shot retrain-oracle wall time (s) — drawn "
+                             "as the cheaper-than-retraining reference line in 14")
     args = parser.parse_args()
     run_stability_analysis(
         args.combined, args.out,
@@ -914,4 +930,5 @@ if __name__ == "__main__":
         methods=args.methods or None,
         steps=args.steps or None,
         pair=args.pair,
+        oracle_time_s=args.oracle_time_s,
     )

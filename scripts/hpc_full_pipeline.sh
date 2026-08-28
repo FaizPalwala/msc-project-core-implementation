@@ -173,7 +173,8 @@ if [ "$DATASET" = "balanced" ]; then
             "$OUT/$ITER_SUBDIR/iterative_combined_aggregated.csv" \
             "$OUT/$ITER_SUBDIR/plots" \
             "$OUT/single_shot_best/single_shot_per_identity.csv" \
-            "$OUT/single_shot_best/single_shot_demographic.csv")
+            "$OUT/single_shot_best/single_shot_demographic.csv" \
+            "$(python3 -c "import json; d=json.load(open('$OUT/single_shot_best/single_shot_aggregated.json')); print(d.get('retrain',{}).get('total_time_s',''))" 2>/dev/null)")
         echo "  Stability($SCHEDULE) job: $STAB_JOB"
         STAB_DEPS="$STAB_DEPS:$STAB_JOB"
     done

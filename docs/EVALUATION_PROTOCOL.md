@@ -426,6 +426,16 @@ holding the pretrained model fixed?
 report μ±σ across orderings. The retrain oracle is order-independent (it
 never touches forget order) and runs once.
 
+**Cost stipulation (cheaper-than-retraining).** The retrain oracle never
+runs the iterative protocol (order-independent, and 15 sequential retrains
+would be ~3 h of pure cost for zero information), so it has no cumulative
+trajectory in the time plots. Its single-shot wall time (≈722 s, from
+`single_shot_aggregated.json`) IS the deployment baseline, however: a
+streaming unlearning method is economically justified only if its total
+cost stays below one retrain-from-scratch (Bourtoule et al. 2021). Plot 14
+draws the oracle time as a dashed reference line, not a bar — the
+threshold methods must beat.
+
 **Reading the result.** Tight μ±σ → behaviour is driven by model/identity
 properties, not schedule luck. Wide μ±σ → order-sensitive forgetting — the
 streaming regime Shen et al. (2025) warns about; report the spread, never
