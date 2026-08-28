@@ -100,7 +100,7 @@ for M in $HP_METHODS; do
 done
 HP_DEPS="${HP_DEPS#:}"
 
-# ── Stage 2c: C2/C3 feasibility gate (multi-scale pre-flight, parallel) ─
+# ── Stage 2c: feasibility gate (multi-scale pre-flight, parallel) ─
 # Trains its own small subsampled model (12-id by default; 100-id via the
 # second arg — see slurm_feasibility.sh) and sweeps each method's budget
 # at 1x/3x/10x → verdicts (GO/TUNE/BROKEN).  No dependency on the train
