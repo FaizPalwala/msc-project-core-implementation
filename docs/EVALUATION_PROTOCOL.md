@@ -465,6 +465,15 @@ measures presence, not erasure. Empirically (v1.3): AdaptiForget closes the
 gap to 0.000 on all 4 identities; GA leaves gaps of 0.21–0.45 (pattern
 persists, consistent with GA's weak forgetting).
 
+**Method contrast (3 methods).** The canary unlearning runs three methods
+(`slurm_canary.sh`): **AdaptiForget** (the novel method making the erasure
+claim), **FT** (fine-tuning — the near-oracle baseline, positive-erasure
+control: its gap should also be ≈ 0, confirming the test registers genuine
+deletion), and **GA** (the negative control: cannot erase, so its gap should
+remain ≫ 0, confirming the test has teeth). The two-point contrast
+(erasing vs non-erasing) verifies that a ≈ 0 gap is real erasure and not a
+test artefact.
+
 **Rationale.** This is the strongest available privacy guarantee: if the
 inserted signal is gone, deletion is *verified*, not merely inferred. It is
 the ground-truth complement to the correlational MIA tiers (Thudi et al. 2022),

@@ -98,7 +98,8 @@ python src/train.py \
 
 CANARY_MODEL="$CKPT_DIR/original_model_best.pt"
 
-# ── Stage 3: Unlearn the canary identities (single-shot, GA + AdaptiForget) ─
+# ── Stage 3: Unlearn the canary identities (single-shot, GA + AdaptiForget
+# + FT) ────────────────────────────────────────────────────────────────
 # Uses the HP-tuned best configs when available (the pipeline passes the
 # hparam dir) — the canary unlearning should reflect the tuned methods,
 # not the default-config baselines.
@@ -107,7 +108,7 @@ python src/single_shot.py \
     --csv "$CANARY_CSV" \
     --model "$CANARY_MODEL" \
     --out "$UNLEARN_DIR" \
-    --methods ga adaptiforget \
+    --methods ga adaptiforget ft \
     --skip_retrain \
     ${BEST_CONFIGS:+--best_configs "$BEST_CONFIGS"} 2>&1
 
@@ -115,7 +116,7 @@ python src/single_shot.py \
 # single_shot (multi-seed) writes seed_<seed>/<method>_unlearned.pt —
 # use the default seed_42 lane for verification.
 echo "[$(date)] Verifying canary unlearning…"
-for method in ga adaptiforget; do
+for method in ga adaptiforget ft; do
     MODEL="$UNLEARN_DIR/seed_42/${method}_unlearned.pt"
     if [ -f "$MODEL" ]; then
         echo "  [verify] $method"
