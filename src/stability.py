@@ -284,7 +284,7 @@ def plot_mia_auc(df, out_dir: Path):
     _plot_vs_step(df, "mia_mean_auc", "MIA AUC (identity head)",
                   "MIA AUC vs. Iteration", out_dir / "02_mia_auc.png",
                   target_line=0.50, target_label="Perfect forgetting (0.50)",
-                  ylim=(0.40, 1.05))
+                  ylim=scale_for("mia_mean_auc")[0])
 
 
 def plot_forget_advantage(df, out_dir: Path):
@@ -542,22 +542,50 @@ def plot_per_identity_signatures(
         return
 
     df = pd.read_csv(per_id_csv)
-    fig, axes = plt.subplots(3, 3, figsize=(16, 14))
+    # 9 methods only — No-Op (control) dropped; Retrain Oracle becomes a
+    # dashed reference line, not a panel. Panel order follows G1→G2→G3.
+    # CSV method labels carry config markers ("AdaptiForget ‡", "MSG-KD †",
+    # "Retrain Oracle*") — strip them and match on the clean label prefix.
+    def _key_from_label(label: str) -> str | None:
+        bare = label.split()[0].replace("*", "").replace("†", "").replace("‡", "")
+        for k, v in METHOD_STYLES.items():
+            if bare == v["label"] or label.replace("‡", "").replace("†", "").replace("*", "") == v["label"]:
+                return k
+        if "Retrain" in label:
+            return "retrain"
+        return None
+
+    df["method_key"] = df["method"].map(_key_from_label)
+    methods = [m for m in panel_order(list(METHOD_STYLES.keys())) if m != "no_unlearning"]
+    df = df[df["method_key"].isin(methods + ["retrain"])]
+    oracle_mean = df.loc[df["method_key"] == "retrain", "mia_auc"].mean() \
+        if "retrain" in df["method_key"].values else None
+    df = df[df["method_key"] != "retrain"]
+
+    n_methods = len(methods)
+    n_cols, n_rows = (3, 3) if n_methods <= 9 else (4, 3)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, 14))
     axes = axes.flatten()
 
-    for ax, (method, group) in zip(axes, df.groupby("method")):
+    for ax, method_key in zip(axes, methods):
+        group = df[df["method_key"] == method_key]
         aucs = group.sort_values("mia_auc", ascending=False)
         colors = ["#e57373" if a > 0.55 else "#81c784" for a in aucs["mia_auc"]]
         ax.bar(range(len(aucs)), aucs["mia_auc"], color=colors, width=0.8)
         ax.axhline(0.50, color="grey", ls="--", lw=1, alpha=0.5)
-        ax.set_title(_style(method)["label"], fontsize=10)
+        if oracle_mean is not None:
+            ax.axhline(oracle_mean, color=ORACLE["color"], ls=ORACLE["ls"],
+                       lw=1.2, alpha=0.7,
+                       label=f"Retrain oracle ({oracle_mean:.3f})")
+            ax.legend(loc="lower right", fontsize=7)
+        ax.set_title(_style(method_key)["label"], fontsize=10)
         ax.set_ylabel("MIA AUC")
         # Full 0–1 range: the whole point is *which* identities leaked
         # (red > 0.55) vs forgotten (green < 0.55). A 0.40 floor clipped
         # every erasing method's bars off-axis (FT max 0.0024 → blank panel).
         ax.set_ylim(0.0, 1.0)
 
-    for ax in axes[len(df["method"].unique()):]:
+    for ax in axes[len(methods):]:
         ax.set_visible(False)
 
     fig.suptitle("Per-Identity Forgetting Signatures\n(red = leaked > 0.55, green = forgotten)",
