@@ -120,6 +120,11 @@ popularity gradient IS the axis) and instead runs Protocols B + C.
 
 ### Full Pipeline (automatic chaining)
 
+Dependency overview: `docs/figures/slurm_dependency_graph.png` (rendered,
+both lanes). The ASCII lanes in `README.md` are the byte-verified canonical
+form — every edge matches an `sbatch --dependency` clause in
+`scripts/hpc_full_pipeline.sh`.
+
 ```bash
 # Submit the entire pipeline — Slurm handles dependencies
 DATASET=balanced bash scripts/hpc_full_pipeline.sh

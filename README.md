@@ -113,6 +113,11 @@ configs — everything downstream runs with the HP-tuned best configs**).
 
 ### Slurm job dependency graph
 
+Rendered overview: `docs/figures/slurm_dependency_graph.png` (both lanes on
+one page). The ASCII lanes below are the byte-verified canonical form —
+every edge matches an `sbatch --dependency` clause in
+`scripts/hpc_full_pipeline.sh`.
+
 **Balanced lane** (iterative + stability are the two schedule lanes, uniform
 and Poisson, run in parallel):
 
