@@ -72,10 +72,11 @@ def _make_canary(identity_id: int, size: int = 32, magnitude: int = 60) -> np.nd
         size:        Canary side length in pixels.
         magnitude:   Max colour offset per channel (8-bit).
 
-    Design notes (empirically established on MPS, Aug 2026):
-      - v1.2 used size=8 / magnitude=2 single-corner: the positive control
-        showed that pattern is BELOW the model's feature noise floor
-        (det-acc 0.478 ≈ chance on the canary-trained model).
+    Design notes (empirically established on MPS):
+      - An early 8×8 / magnitude-2 single-corner configuration was BELOW the
+        model's feature noise floor (det-acc 0.478 ≈ chance on the
+        canary-trained model) — the pattern must be large enough to survive
+        the feature extractor.
       - Even a 64×64 single patch at ±100 is invisible (cos-sim 0.9995):
         train-time RandomResizedCrop crops it out most of the time.
       - Detectable configurations REQUIRE multi-location placement (see

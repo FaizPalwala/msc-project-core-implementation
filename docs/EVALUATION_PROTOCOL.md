@@ -13,10 +13,10 @@ record for the results chapters of the dissertation and for reproducing or
 extending the experiments.
 
 > **Pre-registration statement.** All thresholds marked **[P]** in this
-> document were fixed before the v1.3 full run (jobs 7102706–7102745) and
-> before the final run. They are evaluation targets, not post-hoc fits; where
-> a method misses a target the result is reported as measured, and the
-> interpretation section of each tier explains how to read the miss.
+> document were fixed before the full evaluation run. They are evaluation
+> targets, not post-hoc fits; where a method misses a target the result is
+> reported as measured, and the interpretation section of each tier
+> explains how to read the miss.
 
 ---
 
@@ -216,12 +216,11 @@ rather than penalising it. The weights favour utility and forgetting equally
 methods are primarily compared on *what they forget and keep*, with compute as
 a secondary axis (retrain oracle is the cost baseline).
 
-**v2 erasure-conditioned bracket (2026-08, post-v1.3).** The final run exposed
-a false optimum: a config with tiny ascent LR collapsed confidence on forget
-images → MIA AUC ≈ 0.026 while forget acc stayed ≈ 0.82 and probe-identity
-1.0 — *output suppression, not erasure*. The MIA term alone cannot distinguish
-"confidence collapse" from "identity erased", so since the correction the
-forget term earns credit **only when the config actually erases**
+**Erasure-conditioned bracket.** A config with tiny ascent LR can collapse
+confidence on forget images → MIA AUC ≈ 0.026 while forget acc stays ≈ 0.82
+and probe-identity 1.0 — *output suppression, not erasure*. The MIA term
+alone cannot distinguish "confidence collapse" from "identity erased", so
+the forget term earns credit **only when the config actually erases**
 (`forget_acc ≤ 0.15`, matching the pre-registered forget-acc target [P]).
 Suppressors earn forget credit exactly 0 and cannot out-rank a genuine eraser.
 `src/report.py` `_uf_score` applies the same bracket, so the tuned-table UF
@@ -268,14 +267,14 @@ searched explicitly rather than assumed. Each method's grid is recorded in
 `GRIDS` and the per-trial JSONL is append-only (never re-read by the pipeline,
 by design — a poisoned or partial JSONL cannot corrupt later stages).
 
-### 6.1 Erasure gate (hard rejection layer, 2026-08)
+### 6.1 Erasure gate (hard rejection layer)
 
 **Purpose.** Prevent the search from exporting *suppression* configs as
-"best". The final run's AdaptiForget tuned config (lr_ascent 1e-5, 10× below
-default) collapsed confidence on forget images → MIA AUC ≈ 0.026 (UF read it
-as erased) while forget acc stayed ≈ 0.82 — the model was *unsure*, not
-*unlearned*. The v2 UF bracket (5.1) fixes the score; the gate is the
-complementary hard layer:
+"best". A tuned AdaptiForget config (lr_ascent 1e-5, 10× below default)
+collapsed confidence on forget images → MIA AUC ≈ 0.026 (UF read it as
+erased) while forget acc stayed ≈ 0.82 — the model was *unsure*, not
+*unlearned*. The erasure-conditioned UF bracket (5.1) fixes the score; the
+gate is the complementary hard layer:
 
 - `ERASURE_FORGET_ACC_MAX = 0.15` [P] — aligned with the pre-registered
   forget-acc target.
@@ -288,20 +287,20 @@ complementary hard layer:
   (logged loudly; a rejected config can never be resurrected by
   `config_loader`'s glob). This is the documented fallback for methods that
   cannot erase at full scale (e.g. ng_plus at 750 identities).
-- **Beat-default rule (2026-08-20):** a passing config is exported only if
-  its v2 UF exceeds the YAML default's v2 UF (computed from the defaults
-  single-shot run). If tuning cannot beat the default, the method runs at
-  its default — the honest outcome when a grid contains only suppression,
-  collapse, or nothing (GA at 750-id: the only erasing config destroys
-  retain, UF −0.0014 vs default 0.4725).
+- **Beat-default rule:** a passing config is exported only if its UF
+  exceeds the YAML default's UF (computed from the defaults single-shot
+  run). If tuning cannot beat the default, the method runs at its default —
+  the honest outcome when a grid contains only suppression, collapse, or
+  nothing (GA at 750-id: the only erasing config destroys retain, UF −0.0014
+  vs default 0.4725).
 
-**Why gate + v2 bracket.** The bracket makes the *score* suppression-proof;
-the gate makes the *selection* suppression-proof (a suppressor can never be
-exported even if retain/time dominate its UF). Both thresholds are
-pre-registered targets, so the guard is a protocol control, not a
-post-hoc patch.
+**Why gate + erasure-conditioned bracket.** The bracket makes the *score*
+suppression-proof; the gate makes the *selection* suppression-proof (a
+suppressor can never be exported even if retain/time dominate its UF). Both
+thresholds are pre-registered targets, so the guard is a protocol control,
+not a post-hoc patch.
 
-**Probe arm — retired (2026-08-20, f2).** An earlier revision of this gate
+**Probe arm — retired.** An earlier revision of this gate
 also rejected `probe_identity_forget_acc > 0.30`. The identity probe on the
 forget split is **saturated at ≈1.0 for every method at full scale —
 including the retrain oracle** (it measures backbone feature separability,
@@ -322,9 +321,9 @@ Stage 2c on identity subsamples (12-id and 100-id; see below), sweeping each
 method's budget at 1×/3×/10×
 (`src/feasibility_study.py`, `scripts/slurm_feasibility.sh`).
 
-**Multi-scale design (2026-08, canonical).** A single gate scale cannot
+**Multi-scale design.** A single gate scale cannot
 separate "this method's mechanism scales" from "this method only works when
-the head is tiny" — the final run proved it in BOTH directions:
+the head is tiny" — the full-scale results proved it in BOTH directions:
 - ng_plus: GO at 12-id (erases at 1×!), **never forgets at 750-id** (0.999
   across all 108 hparam trials) — a *scale cliff* invisible at 12-id.
 - FT: BROKEN at 12-id (no response even at 10×), **perfect at 750-id**

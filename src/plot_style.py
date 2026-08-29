@@ -4,7 +4,8 @@
 Centralises method colours/linestyles/markers/labels so stability.py and
 imbalanced_plots.py (and any future plotter) agree on the visual language:
 
-- **Families** (behavioural, thesis full figures — colour-coded):
+- **Families** (behavioural, full-figure colour coding — all methods in one
+  panel):
   *survivors* (green family: ft, msg, msg_kd, adaptiforget) vs *collapsers*
   (red/orange family: ga, ng_plus, ct, budget_scaled); no_unlearning is
   the neutral control.
@@ -15,7 +16,7 @@ imbalanced_plots.py (and any future plotter) agree on the visual language:
 """
 from __future__ import annotations
 
-# ── Behavioural families (thesis full figures) ─────────────────────────────
+# ── Behavioural families (full-figure colour coding) ─────────────────────────
 SURVIVORS  = {"ft", "msg", "msg_kd", "adaptiforget"}   # green family
 COLLAPSERS = {"ga", "ng_plus", "ct", "budget_scaled"}   # red/orange family
 NEUTRAL    = {"no_unlearning", "srl"}                   # grey / control-ish
@@ -92,7 +93,7 @@ def panel_order(methods: list[str]) -> list[str]:
 
 
 def family_color(method: str) -> str:
-    """Colour by behavioural family (used by thesis full figures)."""
+    """Colour by behavioural family (full-figure colour coding)."""
     if method in SURVIVORS:
         return "#2e7d32"            # green
     if method in COLLAPSERS:

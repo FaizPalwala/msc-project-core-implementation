@@ -74,9 +74,8 @@ SCALE_POLICY = {
     "retain_acc":         ((0.0, 1.05),   False),
     # MIA AUC: 0.5 = chance, BELOW 0.5 = the attacker is worse than chance
     # at singling out forget members = the erasure signal (adaptiforget
-    # 0.003, FT 0.0004, CT 0.012). A 0.40 floor clipped every erasing
-    # method's curve/panel off-axis (F10-class bug — same as the per-identity
-    # signatures plot). Full range is the honest window.
+    # 0.003, FT 0.0004, CT 0.012). A 0.40 floor clips every erasing
+    # method's curve off-axis; full range is the honest window.
     "mia_mean_auc":       ((0.0, 1.05),   False),
     "mia_auc":            ((0.0, 1.05),   False),
     "forget_advantage":   ((-0.02, 0.55), False),
@@ -138,7 +137,7 @@ def load_data(combined_csv: str) -> pd.DataFrame:
 def _draw_vs_step(ax, df, metric, style_kwargs: dict | None = None):
     """Plotting body: one line + μ±σ band per method on an existing axes.
 
-    style_kwargs: {lw, ms} overrides for compact/thesis panels (B3).
+    style_kwargs: {lw, ms} overrides for compact panels.
     """
     methods = panel_order(sorted(df["method"].unique()))
     std_col = f"{metric}_std"
@@ -248,7 +247,7 @@ def _plot_subgrouped(df, metric, ylabel, out_file,
 
 def _plot_pair(df, metric, ylabel, out_file,
                target_line=None, target_label=None, members=None):
-    """Thesis-pair variant (B3): compact single panel, family colours,
+    """Compact pair variant: single panel, family colours,
     ~200 pt half-width — tuned for a two-figure LaTeX pair.
     """
     fig, ax = plt.subplots(figsize=(7, 4.2))
@@ -763,7 +762,7 @@ def plot_demographic_heatmap(
     fig, ax = plt.subplots(figsize=(max(8, len(pivoted.columns)*1.2),
                                     max(4, len(pivoted.index)*0.6)))
     # Full 0–1 colour window: MIA AUC spans 0.0002 (erased) to 0.84 (leaked);
-    # the old 0.45–0.65 window saturated 36/44 cells (F11-class bug).
+    # a narrower window would saturate the erasing methods' cells.
     im = ax.imshow(pivoted.values, cmap="RdYlGn_r", vmin=0.0, vmax=1.0,
                    aspect="auto")
     ax.set_xticks(range(len(pivoted.columns)))
@@ -1039,7 +1038,7 @@ def run_stability_analysis(
     df = load_data(combined_csv)
     # Filter re-emergence rows ONLY if the column exists.  df.get("type","")
     # returns the SCALAR default when the column is absent, so
-    # df[scalar_bool] → KeyError: True (the 7081731/7081733 crash).
+    # df[scalar_bool] would raise KeyError — check membership first.
     if "type" in df.columns:
         df = df[df["type"] != "re_emergence"]
 
@@ -1114,7 +1113,7 @@ def run_stability_analysis(
     plot_phase_space_subgrouped(df, out_path)
     plot_total_time_subgrouped(df, out_path, oracle_time_s=oracle_time_s)
 
-    # ── Thesis pairs (B3) — written only with --pair ─────────────────────
+    # ── Compact pairs — written only with --pair ─────────────────────────
     if pair:
         fig_dir = Path("src/figures") if Path("src").exists() else out_path
         fig_dir.mkdir(parents=True, exist_ok=True)
@@ -1142,7 +1141,7 @@ if __name__ == "__main__":
     parser.add_argument("--steps",      type=int, nargs="*", default=None,
                         help="Plot only these steps (e.g. 1 5 10 15)")
     parser.add_argument("--pair", action="store_true",
-                        help="Also write compact thesis-pair figures to src/figures")
+                        help="Also write compact paired figures to src/figures")
     parser.add_argument("--oracle_time_s", type=float, default=None,
                         help="Single-shot retrain-oracle wall time (s) — drawn "
                              "as the cheaper-than-retraining reference line in 14")

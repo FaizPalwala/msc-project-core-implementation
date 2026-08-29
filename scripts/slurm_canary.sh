@@ -121,9 +121,8 @@ for method in ga adaptiforget ft; do
     if [ -f "$MODEL" ]; then
         echo "  [verify] $method"
         # Pure JSON to the file (stdout); logs stay on the job stream.
-        # The old `2>&1 | tee` merged logger lines into the JSON and
-        # crashed report.py's json.load (JSONDecodeError, both report
-        # jobs 7102724/7102745).  Filter timestamped log lines BEFORE
+        # Do NOT pipe through `tee`: logger lines would merge into the
+        # JSON and break json.load.  Filter timestamped log lines BEFORE
         # tee so the file receives only the JSON payload.
         python src/canary.py verify \
             --csv "$CANARY_CSV" \

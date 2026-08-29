@@ -182,8 +182,8 @@ def verdict(rows: list[dict], method: str) -> str:
     mapped 0.0 -> 1.0 (falsy-zero bug): every method that forgot got
     'BROKEN'.  Use explicit None checks.
 
-    v2 (2026-08-20): retain is judged AT THE BUDGET WHERE FORGETTING
-    HAPPENS, not the max across budgets.  The old `max_retain` masked
+    retain is judged AT THE BUDGET WHERE FORGETTING
+    HAPPENS, not the max across budgets.  The max across budgets masked
     retain damage: budget_scaled (12-id: 1× → 0.300/1.000, 3× →
     0.000/0.190) scored retain_ok via the healthy 1× row and got GO,
     despite destroying retain exactly where it erases.  Now: find the
@@ -228,7 +228,7 @@ def main() -> None:
     ap.add_argument("--imgs_per_id", type=int, default=16)
     ap.add_argument("--scale", default="12id",
                     help="scale tag written into results (e.g. 12id, 75id).  "
-                         "Multi-scale feasibility (2026-08): the SAME study at "
+                         "Multi-scale feasibility: the SAME study at "
                          "12-id AND 75-id (≈10% of full) exposes head-width "
                          "mechanisms the 12-id gate cannot see — ng_plus "
                          "(GO@12, never forgets@750), FT (BROKEN@12, "

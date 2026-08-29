@@ -66,7 +66,7 @@ METHODS=("$@")
 [ ${#METHODS[@]} -eq 0 ] && METHODS=(ga ng_plus adaptiforget msg msg_kd ct ft srl budget_scaled)
 
 # ── Scale → subsample sizes ──────────────────────────────────────────────
-# Multi-scale feasibility (2026-08): the SAME gate at 12-id and 100-id,
+# Multi-scale feasibility: the SAME gate at 12-id and 100-id,
 # with the 750-id column coming from the hparam grids.  12-id is the cheap
 # fast-fail filter; 100-id (~13% of full, keeps the 9:1 retain:forget
 # ratio) is large enough that head-width mechanisms start to bite — the

@@ -51,7 +51,7 @@ BEST_CONFIGS="${3:-}"   # HP-tuned best-configs dir (hparam/) — passed by the 
 # results/<dataset>, a sibling of the ablation dir).  NOTE: do NOT build
 # this path as "$OUT/../checkpoints" — bash `[ -f ]` resolves `..` through
 # the intermediate directory, and OUT (ablation/) does not exist until the
-# mkdir below, so the check would fail spuriously (the 7081719/7081738 bug).
+# mkdir below, so the check would fail spuriously.
 mkdir -p "$OUT"
 MODEL="$OUT_BASE/checkpoints/original_model_best.pt"
 [ -f "$MODEL" ] || { echo "ERROR: trained model not found: $MODEL" >&2; exit 1; }

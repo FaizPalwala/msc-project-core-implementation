@@ -149,7 +149,8 @@ def run_single_shot(
 
             # ── Forget-train evaluation (same images used for unlearning)
             #     The gap between train and holdout forget accuracy detects
-            #     overfitting-to-forgetting (see §4.3 of METRICS_GUIDE.md).
+            #     overfitting-to-forgetting (see EVALUATION_PROTOCOL.md,
+            #     "Rationale" under the iterative-protocol metrics).
             eval_train = evaluate_full(unlearned_model, csv_path, device,
                                        subset="train", verbose=False)
 
