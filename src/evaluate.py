@@ -144,9 +144,6 @@ def evaluate_full(
     """Evaluate on retain and forget splits (both heads)."""
     results: dict[str, Any] = {}
 
-    # v1.1 schema: no 'test' split — every identity is retain or forget,
-    # each with train/holdout image subsets.  retain+forget holdout is the
-    # generalisation eval (evaluate_full's caller chooses the subset).
     for split in ["retain", "forget"]:
         ds = VirtualIdentityDataset(csv_path, split=split, transform=get_val_transform(),
                                     subset=subset)
@@ -173,7 +170,6 @@ def evaluate_full(
 
 
 # ── Per-identity breakdown ────────────────────────────────────────────────────
-
 
 def evaluate_per_identity(
     model: nn.Module,
@@ -205,7 +201,6 @@ def evaluate_per_identity(
 
 
 # ── Demographic-stratified evaluation ─────────────────────────────────────────
-
 
 def evaluate_per_demographic(
     model: nn.Module,

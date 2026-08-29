@@ -38,10 +38,6 @@ ResNet-18 backbone (ImageNet-pretrained, 224×224)
 
 ### Schema
 
-**v1.1 (750-id redesign)** — both artifacts carry 12 columns but different
-column sets.  Identity classes, forget-step count and per-step sizes are
-inferred from the CSV at runtime (no hardcoding — see `dataset.py`).
-
 Balanced — `dataset.csv` / `dataset.parquet` (12 columns):
 
 | Column | Type | Notes |
@@ -276,10 +272,7 @@ Five-tier evaluation referenced to:
 | MIA AUC by popularity bin | Identity | Uniform across bins | Per-method (imbalanced) |
 
 Note: identity accuracy is reported on **holdout** images (never seen during
-unlearning — the subset leak fix enforces this at the dataset layer).  The
-old identity-disjoint `test` split is gone: every identity is retain or
-forget, each with train/holdout image subsets.  See `METRICS_GUIDE.md` for
-the full interpretation guide with citations.
+unlearning — the subset leak fix enforces this at the dataset layer).  
 
 ## Config Structure
 

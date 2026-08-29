@@ -117,12 +117,6 @@ def run_per_bin_oracle(csv_path: str, model_path: str, out_dir: str,
     # Behavioral distance per bin:
     #   |forget_holdout_acc(unlearned, bin) − forget_holdout_acc(oracle_bin, bin)|
     # where oracle_bin's bin-B forget acc ≈ 0 (never trained on them).
-    # NOTE: the aggregated JSON is FLAT (methods at top level, no
-    # "aggregated" wrapper) and carries per-bin keys forget_id_acc_{bin}
-    # (F4).  The oracle reference must come from evaluate_per_demographic
-    # — the whole-eval forget.identity.accuracy LEAKS across bins (an
-    # oracle excludes only its own bin's forgets, so it still knows the
-    # other bins' identities and scores ~0.95 overall).
     from evaluate import evaluate_per_demographic
 
     single_shot_dir = out_path.parent / "single_shot_best"

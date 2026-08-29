@@ -55,12 +55,6 @@ else
 fi
 SCALE="${2:-12id}"
 OUT="$PROJECT_DIR/results/feasibility_${DATASET}_${SCALE}"
-# NOTE: 'shift 2 2>/dev/null' — the redirect must come AFTER the count.
-# The old 'shift 2>/dev/null' parsed 2>/dev/null AS the count (bash treats
-# a redirection token as 1), i.e. 'shift 1' — which silently ate only the
-# dataset and left the scale arg (12id) as a 'method' in $@ → the 20 Aug
-# feasibility jobs ran "unknown method 12id".  Off-by-one exposed by the
-# new 3-arg form (dataset scale methods...).
 shift 2 2>/dev/null || true
 METHODS=("$@")
 [ ${#METHODS[@]} -eq 0 ] && METHODS=(ga ng_plus adaptiforget msg msg_kd ct ft srl budget_scaled)

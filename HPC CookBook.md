@@ -1,9 +1,5 @@
 # HPC CookBook — Machine Unlearning on Aire
 
-**v1.1 (750-id redesign).**  Source of truth for running the evaluation
-suite on Aire.  Code-level details live in the README; metric semantics in
-`METRICS_GUIDE.md`.  Update all three together when the design changes.
-
 ## Environment Setup
 
 ```bash
@@ -22,8 +18,6 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 
 # 4. Remaining deps + console scripts from pyproject.toml (single source of truth)
 pip install -e .
-
-# 5. cuDNN: PyTorch ships its own — no extra install needed for ResNet-18 training
 ```
 
 ## Storage Layout
@@ -220,7 +214,7 @@ sbatch scripts/slurm_smoke.sh
 python tests/smoke_test.py
 ```
 
-### Method Feasibility Gate (C2/C3 triage — before the expensive full run)
+### Method Feasibility Gate (triage — before the expensive full run)
 
 Multi-scale gate: subsamples real identities (12-id fast-fail, or 100-id ≈
 13% of full for the head-width column), trains a tiny model, and sweeps each
@@ -341,8 +335,6 @@ train ───────────────┤                          
 ## Aire-Specific Notes
 
 - **Partition**: `gpu` (28 nodes × 3 L40S GPUs, 168 cores each)
-- **No hard job cap** — the old "5-job limit" was an empirical free-GPU
-  count at submit time, not a quota (GrpTRES is empty).  QoS `normal`.
 - **Flash storage**: `$TMP_SHARED` (1 TB/job, auto-purged). Stage datasets
   there for I/O-heavy phases.
 - **Lustre scratch**: `/mnt/scratch/$USER/` — large capacity, slower I/O.
@@ -350,7 +342,5 @@ train ───────────────┤                          
 - **Home**: `$HOME` — small quota, versioned backups. Keep only dotfiles
   and small configs; the repo lives on scratch (code is backed up via git
   remote; results are regenerable).
-- **Max wall time**: 72 hr on gpu partition.
+- **Max wall time**: 48 hr on gpu partition.
 - **Interactive**: `srun --partition=gpu --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=4:00:00 --pty bash`
-- **Push from the login node** — commits are made locally and pushed by the
-  user from Aire; the repo never pushes from dev machines.

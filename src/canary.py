@@ -203,13 +203,6 @@ def verify_canary_unlearning(
     """
     from dataset import VirtualIdentityDataset, get_val_transform
 
-    # Clean images live under the ORIGINAL data root (bench/).  Derive it
-    # from the CSV's own NON-canary rows: those keep absolute paths into
-    # <data_root>/images/... (insert_canary only rewrites canary identities'
-    # paths; retain/other rows are untouched).  Robust to wherever the CSV
-    # is mounted — do NOT derive from csv_path.parent.parent, which is only
-    # correct when the CSV sits exactly two levels below the data root
-    # (e.g. bench/metadata/dataset.csv → bench/) and breaks for temp copies.
     df0 = VirtualIdentityDataset(csv_path, split="retain+forget", transform=get_val_transform(),
                                  subset="all").df
     non_can = df0[~df0["image_path"].astype(str).str.contains("canary_images", na=False)]
@@ -404,9 +397,6 @@ if __name__ == "__main__":
         # resolution (csv_dir → data_dir) would look in results/<dataset>/
         # where images don't exist.  Absolutizing against the source data
         # root makes the canary CSV self-contained wherever it lands.
-        # NOTE: --out may be RELATIVE on HPC (slurm passes
-        # 'results/<dataset>/canary'), so resolve() against CWD first —
-        # otherwise the written paths stay relative and dataset.py
         # re-resolves them, doubling the prefix.
         out_path = Path(args.out).resolve()
         out_dir = out_path.parent

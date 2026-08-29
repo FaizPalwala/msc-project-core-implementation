@@ -1,8 +1,8 @@
 # Evaluation Protocol
 
-**Version:** 1.0 (2026-08) · **Status:** Release artifact (tracked, versioned)
-**Applies to:** `msc-project-core-implementation` @ `dev/evaluation-refactor`
-**Companion dataset:** `release_v1_bench` v1.1 (750-identity, 15-step protocol)
+**Version:** 1.0 (2026-08) · **Status:** Release artifact
+**Applies to:** `msc-project-core-implementation`
+**Companion dataset:** `release_v1_bench` v1.0 (750-identity, 15-step protocol)
 
 This document is the formal, pre-registered evaluation protocol for the
 identity-level machine-unlearning framework. It specifies, for every metric

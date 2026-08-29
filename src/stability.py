@@ -63,7 +63,7 @@ from plot_style import (  # noqa: E402
     style as _style, method_label, panel_order,
 )
 
-# ── Shared scale policy (B1) ────────────────────────────────────────────────
+# ── Shared scale policy ────────────────────────────────────────────────
 # Each metric gets ONE y-window used by ALL subgroup panels, so the panels
 # are directly comparable instead of each auto-scaling into its own world.
 # Log-scale metrics span orders of magnitude (drift 9.7 → 1.36e6): a linear
@@ -596,7 +596,8 @@ def plot_total_time_bar(df, out_dir: Path, oracle_time_s: float | None = None):
     logger.info("  Saved: 14_total_time_bar.png")
 
 
-# ── New plots (10–13) ─────────────────────────────────────────────────────────
+
+# ── Supplemental plots (10–13) ─────────────────────────────────────────────────────────
 
 
 def plot_per_identity_signatures(

@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Erasure gate (option-1 guard)
+# Erasure gate
 # ──────────────────────────────────────────────────────────────────────────────
 # A config with tiny lr_ascent can collapse confidence on forget images →
 # MIA AUC ~0.026 (the UF forget term reads it as "erased") while forget acc
@@ -394,26 +394,7 @@ def run_search(
         try:
             trial = run_trial(method_name, cfg, original_model,
                               csv_path, device, trial_idx=i+1)
-            # ── Erasure gate (option-1 guard) ─────────────────────────────
-            # A config with tiny lr_ascent collapses confidence on forget
-            # images → MIA AUC drops to ~0.026 (UF's forget term reads it
-            # as "erased") while forget acc stays 0.82 — output
-            # suppression, not erasure.  Reject any config that does not
-            # actually erase: forget_id_acc > 0.15 (ERASURE_FORGET_ACC_MAX,
-            # the pre-registered target).
-            # The probe arm is NOT part of the gate: at full scale
-            # probe_identity_forget_acc saturates at ~1.0 for everything —
-            # the retrain oracle (forget 0.0) also reads probe 1.0,
-            # because the probe measures backbone feature separability,
-            # which survives head-level unlearning.  A probe threshold of
-            # 0.30 rejected 100% of trials (even genuine erasers) and
-            # silently reverted every method to YAML defaults.  Probe
-            # stays in the trial dict as a DIAGNOSTIC only; forget acc is
-            # the gate signal.
-            # Gated trials are still written to the JSONL (audit trail)
-            # but excluded from ranking/best-config export; if NO trial
-            # passes, no best config is exported and the downstream
-            # stages fall back to the YAML default.
+            # ── Erasure gate ─────────────────────────────
             probe_f = trial.get("probe_identity_forget_acc")
             if trial.get("forget_id_acc", 1.0) > ERASURE_FORGET_ACC_MAX:
                 n_gated += 1

@@ -220,7 +220,7 @@ def _load_ablation(results_dir: Path) -> dict[str, Any] | None:
 
 
 def _load_feasibility(results_dir: Path) -> dict[str, Any] | None:
-    """Load the C2/C3 feasibility-gate verdicts (multi-scale).
+    """Load the feasibility-gate verdicts (multi-scale).
 
     slurm_feasibility.sh writes results/feasibility_<dataset>_<scale>/
     (12id + 100id), SIBLINGS of the per-dataset results dir
@@ -228,12 +228,6 @@ def _load_feasibility(results_dir: Path) -> dict[str, Any] | None:
     carries {subsample, scale, rows (per method×multiplier budget sweep),
     verdicts (method → GO/TUNE/BROKEN)}.  Returns {"<scale>": data, ...}
     or None when the gate didn't run.
-
-    Legacy note: the pre-multi-scale gate wrote results/feasibility_<dataset>/
-    (scale=None, the 12-id gate).  It is ALWAYS loaded and labelled "12id"
-    so the trajectory table keeps its 12-id column even after the
-    scale-tagged dirs appear (a bare glob of the *_id dirs would silently
-    drop it once any scale dir has results).
     """
     dataset = results_dir.name
     cands: list[Path] = sorted(results_dir.parent.glob(f"feasibility_{dataset}_*id/feasibility_results.json"))
@@ -318,7 +312,7 @@ def _render_feasibility_md(feas: dict[str, Any], tuned: dict[str, Any] | None = 
         lines.append(f"| {method} | " + " | ".join(cells) + " |")
     lines.append("")
     lines.append("_Cells are forget/retain id-acc at each budget multiplier.  "
-                 "Verdicts (v2): GO = forgets ≤0.2 with retain ≥0.6 at the erasing "
+                 "Verdicts: GO = forgets ≤0.2 with retain ≥0.6 at the erasing "
                  "budget; TUNE = responds to budget; TUNE(retain-collapse) = forgets "
                  "but kills retain; BROKEN = no response even at 10×.  The 750-id "
                  "column uses hparam-tuned configs.  Scale-cliff methods (erasure at "
